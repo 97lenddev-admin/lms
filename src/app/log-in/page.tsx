@@ -53,7 +53,7 @@ export default async function LogInPage() {
               </div>
             </header>
 
-            <form className="flex w-full flex-col gap-6">
+            <form action="/credit-analyst" className="flex w-full flex-col gap-6">
               <div className="flex flex-col gap-5">
                 <label className="flex flex-col gap-1.5 text-sm font-medium leading-5 text-[#404040]">
                   Email
