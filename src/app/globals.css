@@ -34,3 +34,40 @@ body {
     display: flex;
   }
 }
+
+@media (max-width: 1023px) {
+  /* Open-submission detail: arrow-only navigation with status opposite it. */
+  div.min-h-screen.bg-white > div:first-child:has(+ header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  div.min-h-screen.bg-white > header > div > div:first-of-type h1 {
+    display: none;
+  }
+
+  div.min-h-screen.bg-white > header > div > div:first-of-type > span {
+    position: absolute;
+    top: 17px;
+    right: 16px;
+    z-index: 10;
+  }
+
+  div.min-h-screen.bg-white > header > div > h2 {
+    margin-top: 0;
+  }
+
+  div.min-h-screen.bg-white > header > div > div:last-child {
+    background: #fafafa;
+    border-color: rgba(0, 0, 0, 0.1);
+    color: #737373;
+    font-size: 12px;
+    line-height: 18px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  div.min-h-screen.bg-white > div.fixed.inset-x-0.bottom-0 > div > button:not(:last-child) {
+    display: none !important;
+  }
+}
