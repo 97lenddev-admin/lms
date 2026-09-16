@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
+import LoginForm from "./login-form";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Log in | LMS",
@@ -21,6 +24,12 @@ function isMobileRequest(requestHeaders: Headers) {
 }
 
 export default async function LogInPage() {
+  if (isSupabaseConfigured()) {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) redirect("/credit-analyst");
+  }
+
   const requestHeaders = await headers();
   const isMobile = isMobileRequest(requestHeaders);
   const DesktopReminders = isMobile
@@ -53,58 +62,7 @@ export default async function LogInPage() {
               </div>
             </header>
 
-            <form action="/credit-analyst" className="flex w-full flex-col gap-6">
-              <div className="flex flex-col gap-5">
-                <label className="flex flex-col gap-1.5 text-sm font-medium leading-5 text-[#404040]">
-                  Email
-                  <input
-                    className="h-11 rounded-lg border border-[#d4d4d4] bg-white px-3.5 text-base font-normal leading-6 text-[#171717] shadow-[0_1px_2px_rgba(0,0,0,0.05)] outline-none placeholder:text-[#737373] focus:border-[#e11d48] focus:ring-2 focus:ring-[#e11d48]/15"
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    placeholder="Enter your email"
-                    required
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5 text-sm font-medium leading-5 text-[#404040]">
-                  Password
-                  <input
-                    className="h-11 rounded-lg border border-[#d4d4d4] bg-white px-3.5 text-base font-normal leading-6 text-[#171717] shadow-[0_1px_2px_rgba(0,0,0,0.05)] outline-none placeholder:text-[#737373] focus:border-[#e11d48] focus:ring-2 focus:ring-[#e11d48]/15"
-                    type="password"
-                    name="password"
-                    autoComplete="current-password"
-                    placeholder="••••••••••••"
-                    required
-                  />
-                </label>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 text-sm font-medium leading-5">
-                <label className="flex min-w-0 items-center gap-2 text-[#404040]">
-                  <input
-                    className="size-4 shrink-0 appearance-none rounded border border-[#d4d4d4] bg-white checked:border-[#e11d48] checked:bg-[#e11d48] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]"
-                    type="checkbox"
-                    name="remember"
-                  />
-                  <span>Remember for 30 days</span>
-                </label>
-
-                <Link
-                  href="/forgot-password"
-                  className="shrink-0 font-semibold text-[#be123c] hover:text-[#9f1239] focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]"
-                >
-                  Forgot password
-                </Link>
-              </div>
-
-              <button
-                className="flex h-11 w-full items-center justify-center rounded-lg border-2 border-white/10 bg-[#e11d48] px-4 text-base font-semibold leading-6 text-white shadow-[0_1px_2px_rgba(0,0,0,0.05),inset_0_0_0_1px_rgba(0,0,0,0.18),inset_0_-2px_0_rgba(0,0,0,0.05)] transition-colors hover:bg-[#be123c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]"
-                type="submit"
-              >
-                Sign in
-              </button>
-            </form>
+            <LoginForm />
           </div>
         </div>
 
