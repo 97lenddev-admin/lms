@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 function FeaturedIcon({ type }: { type: "key" | "mail" }) {
   return (
@@ -39,10 +40,36 @@ function BackToLogin() {
 const primaryButton =
   "flex h-11 w-full items-center justify-center rounded-lg border-2 border-white/10 bg-[#e11d48] px-4 text-base font-semibold leading-6 text-white shadow-[0_1px_2px_rgba(0,0,0,0.05),inset_0_0_0_1px_rgba(0,0,0,0.18),inset_0_-2px_0_rgba(0,0,0,0.05)] transition-colors hover:bg-[#be123c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]";
 
-export default function ForgotPasswordForm() {
+export default function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: boolean }) {
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(invalidLink ? "This reset link is invalid or expired. Request a new link and open it in the same browser." : "");
+  const [notice, setNotice] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function sendReset(email: string) {
+    if (pending) return;
+    setPending(true);
+    setError("");
+    setNotice("");
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      });
+      if (authError) {
+        setError(authError.status === 429 ? "Please wait a minute before requesting another link." : "Unable to send reset instructions. Please try again.");
+        return;
+      }
+      setSubmittedEmail(email);
+      setNotice("If an account exists for this email, reset instructions will arrive shortly. Open the link in this browser.");
+    } catch {
+      setError("Unable to connect. Please try again or contact your administrator.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
 
@@ -52,7 +79,7 @@ export default function ForgotPasswordForm() {
     }
 
     const data = new FormData(form);
-    setSubmittedEmail(String(data.get("email")));
+    await sendReset(String(data.get("email") ?? "").trim());
   }
 
   if (submittedEmail) {
@@ -63,23 +90,28 @@ export default function ForgotPasswordForm() {
           <div className="flex w-full flex-col gap-3">
             <h1 className="text-2xl font-semibold leading-8">Check your email</h1>
             <p className="text-base leading-6 text-[#525252]">
-              We sent a password reset link to{" "}
+              Reset instructions requested for{" "}
               <span className="font-medium">{submittedEmail}</span>
             </p>
           </div>
         </header>
 
-        <button className={primaryButton} type="button">
+        <a className={primaryButton} href="mailto:">
           Open email app
-        </button>
+        </a>
+
+        {error && <p role="alert" className="text-sm text-[#be123c]">{error}</p>}
+        {notice && <p role="status" className="text-sm text-[#525252]">{notice}</p>}
 
         <p className="flex flex-wrap justify-center gap-x-1 text-sm leading-5 text-[#525252]">
           Didn’t receive the email?
           <button
             type="button"
+            disabled={pending}
+            onClick={() => sendReset(submittedEmail)}
             className="font-semibold text-[#be123c] hover:text-[#9f1239] focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]"
           >
-            Click to resend
+            {pending ? "Sending…" : "Click to resend"}
           </button>
         </p>
 
@@ -100,7 +132,7 @@ export default function ForgotPasswordForm() {
         </div>
       </header>
 
-      <form onSubmit={handleSubmit} className="flex w-full flex-col gap-6">
+      <form onSubmit={handleSubmit} aria-busy={pending} className="flex w-full flex-col gap-6">
         <label className="flex flex-col gap-1.5 text-left text-sm font-medium leading-5 text-[#404040]">
           Email
           <input
@@ -113,8 +145,9 @@ export default function ForgotPasswordForm() {
           />
         </label>
 
-        <button className={primaryButton} type="submit">
-          Reset password
+        {error && <p role="alert" className="text-sm text-[#be123c]">{error}</p>}
+        <button className={primaryButton} type="submit" disabled={pending}>
+          {pending ? "Sending…" : "Reset password"}
         </button>
       </form>
 

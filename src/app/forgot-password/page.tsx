@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   description: "Request a password reset link",
 };
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   return (
     <main className="flex min-h-screen w-full justify-center bg-white px-4 pb-12 pt-12 text-[#171717] lg:px-8 lg:pt-24">
-      <ForgotPasswordForm />
+      <ForgotPasswordForm invalidLink={error === "invalid-link"} />
     </main>
   );
 }
