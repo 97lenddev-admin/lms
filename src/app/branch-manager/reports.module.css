@@ -1,0 +1,25 @@
+.main{background:white;min-width:0}
+.header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:32px}
+.header h1{display:flex;align-items:center;gap:8px;font-size:20px;line-height:30px;font-weight:600;outline:none}
+.metadata{font-size:16px;line-height:24px;color:#525252;margin-top:2px}
+.dateBadge{display:flex;align-items:center;gap:8px;flex-shrink:0;padding:8px 10px;border:1px solid #d4d4d4;border-radius:8px;background:#f5f5f5;color:#404040;font-weight:500;line-height:20px;box-shadow:0 1px 2px #0000000d}
+.main img{flex-shrink:0;object-fit:contain}
+.main select+img{position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;margin-bottom:24px;align-items:start}
+.metric{padding:20px;border:1px solid #e5e5e5;border-radius:12px;box-shadow:0 1px 2px #0000000d;min-height:174px}
+.metricIcon{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;margin-bottom:20px}
+.green{background:#dcfce7}.yellow{background:#fef9c3}.rose{background:#ffe4e6}.neutral{background:#f5f5f5}
+.metric p{color:#404040;line-height:20px;margin-bottom:8px}.metric strong{font-size:30px;line-height:38px;font-weight:600}.metric small{display:block;color:#737373;font-size:11px;margin-top:4px}
+.tablePanel{border:1px solid #e5e5e5;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px #0000000d}
+.previewHeader{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:20px 24px;border-bottom:1px solid #e5e5e5;white-space:nowrap;overflow:hidden}
+.previewHeader h2{font-size:16px;font-weight:600}.previewHeader p{color:#525252}
+.tableScroll{overflow-x:auto}.tableScroll:focus-visible{outline:2px solid #e11d48;outline-offset:-2px}
+.tablePanel table{width:100%;min-width:900px;table-layout:fixed;text-align:left;border-collapse:collapse}
+.tablePanel th{height:44px;background:#fafafa;text-transform:uppercase;color:#737373;font-size:12px;font-weight:500;padding:0 24px;white-space:nowrap}
+.tablePanel th span{display:inline-flex;align-items:center;gap:4px}.arrowUp{transform:rotate(180deg)}
+.tablePanel td{height:72px;border-top:1px solid #e5e5e5;padding:0 24px;color:#404040;white-space:nowrap}.tablePanel td:first-child{color:#171717}
+.previewFooter{text-align:center;padding:20px 16px;color:#737373;border-top:1px solid #e5e5e5;line-height:20px}
+.actions{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}
+@media(max-width:1200px) and (min-width:1024px){.header{flex-wrap:wrap}.metrics{gap:12px}.metric{padding:16px}.main form>div>div:first-child{grid-template-columns:1fr 1fr}.main form>div>div:first-child>div{grid-column:1/-1}}
+@media(max-width:1023px){.header{flex-direction:column;gap:24px;margin-bottom:32px}.header h1{flex-wrap:wrap}.header h1>span{flex-basis:auto}.header:not(:has(.dateBadge)) h1{display:flex;flex-direction:column;align-items:flex-start;gap:8px}.metadata{display:none}.dateBadge{font-size:14px;line-height:20px}.metrics{grid-template-columns:minmax(0,1fr);gap:12px}.metric{min-height:174px}.rateHint{display:none}.previewHeader{gap:100px;padding:20px 24px}.previewHeader p{font-size:14px}.tablePanel table{min-width:1096px}.main form footer button{flex:none}.main form button[aria-controls="report-date-range"]{width:fit-content;max-width:100%;font-size:14px}.actions{flex-direction:column;gap:12px}.actions .csv{display:none}}
+@media print{.main{margin:0!important;padding:0!important;min-height:0}.header{display:flex;flex-direction:row;gap:16px}.metadata{display:block}.metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{padding:12px;min-height:0;break-inside:avoid}.metricIcon{margin-bottom:12px}.metric strong{font-size:24px}.tableScroll{overflow:visible}.tablePanel{overflow:visible}.tablePanel table{min-width:0;width:100%;table-layout:auto}.tablePanel th,.tablePanel td{padding:8px;height:auto;font-size:10px}.tablePanel col{width:auto!important}.tablePanel tr{break-inside:avoid}.tablePanel thead{display:table-header-group}.actions{display:none}.dateBadge{font-size:10px}.header h1{font-size:18px}.main{print-color-adjust:exact}}
