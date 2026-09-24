@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient, setRememberMe } from "@/lib/supabase/client";
 
-export default function SignOutButton() {
+type SignOutButtonProps = {
+  iconSrc?: string;
+  iconSize?: number;
+  buttonClassName?: string;
+};
+
+export default function SignOutButton({
+  iconSrc = "/credit-analyst/icons/logout.svg",
+  iconSize = 20,
+  buttonClassName = "rounded p-1 hover:bg-[#fafafa] disabled:opacity-50",
+}: SignOutButtonProps = {}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -26,8 +36,8 @@ export default function SignOutButton() {
   }
 
   return <div>
-    <button type="button" onClick={signOut} disabled={pending} aria-label="Sign out" title="Sign out" className="rounded p-1 hover:bg-[#fafafa] disabled:opacity-50">
-      <Image src="/credit-analyst/icons/logout.svg" alt="" width={20} height={20} />
+    <button type="button" onClick={signOut} disabled={pending} aria-label="Sign out" title="Sign out" className={buttonClassName}>
+      <Image src={iconSrc} alt="" width={iconSize} height={iconSize} />
     </button>
     {error && <p role="alert" className="text-xs text-[#be123c]">{error}</p>}
   </div>;

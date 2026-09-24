@@ -6,7 +6,9 @@ import { rememberCookie, sessionCookieOptions } from "@/lib/supabase/cookies";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
   response.headers.set("Cache-Control", "private, no-store");
-  const protectedRoute = /^\/(credit-(analyst|investigator)|branch-manager)(\/|$)/.test(request.nextUrl.pathname);
+  const protectedRoute =
+    /^\/(credit-(analyst|investigator)|branch-manager|cashier)(\/|$)/.test(request.nextUrl.pathname) &&
+    !/\.[^/]+$/.test(request.nextUrl.pathname);
 
   function loginRedirect() {
     const redirect = NextResponse.redirect(new URL("/log-in", request.url));
@@ -37,5 +39,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/log-in", "/forgot-password", "/reset-password", "/auth/:path*", "/credit-analyst/:path*", "/credit-investigator/:path*", "/branch-manager/:path*"],
+  matcher: ["/log-in", "/forgot-password", "/reset-password", "/auth/:path*", "/credit-analyst/:path*", "/credit-investigator/:path*", "/branch-manager/:path*", "/cashier/:path*"],
 };
