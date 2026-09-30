@@ -1,48 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-import { createClient, setRememberMe } from "@/lib/supabase/client";
+import { useActionState, useState } from "react";
+import { loginAction } from "./actions";
 
 export default function LoginForm() {
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [state, formAction, pending] = useActionState(loginAction, { error: "" });
   const [showPassword, setShowPassword] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) return;
-    const form = new FormData(event.currentTarget);
-    setPending(true);
-    setError("");
-    try {
-      const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: String(form.get("email") ?? "").trim(),
-        password: String(form.get("password") ?? ""),
-      });
-      if (authError) {
-        setError(authError.code === "invalid_credentials"
-          ? "Incorrect email or password."
-          : authError.code === "email_not_confirmed"
-            ? "Please confirm your email before signing in."
-            : "Unable to sign in. Please try again.");
-        return;
-      }
-      setRememberMe(form.get("remember") === "on");
-      router.replace("/credit-analyst");
-      router.refresh();
-    } catch {
-      setError("Unable to connect. Please try again or contact your administrator.");
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
-            <form onSubmit={handleSubmit} aria-busy={pending} className="flex w-full flex-col gap-6">
+            <form action={formAction} aria-busy={pending} className="flex w-full flex-col gap-6">
               <div className="flex flex-col gap-5">
                 <label className="flex flex-col gap-1.5 text-sm font-medium leading-5 text-[#404040]">
                   Email
@@ -111,7 +78,7 @@ export default function LoginForm() {
                 </Link>
               </div>
 
-              {error && <p role="alert" className="text-sm text-[#be123c]">{error}</p>}
+              {state.error && <p role="alert" className="text-sm text-[#be123c]">{state.error}</p>}
               <button
                 className="flex h-11 w-full items-center justify-center rounded-lg border-2 border-white/10 bg-[#e11d48] px-4 text-base font-semibold leading-6 text-white shadow-[0_1px_2px_rgba(0,0,0,0.05),inset_0_0_0_1px_rgba(0,0,0,0.18),inset_0_-2px_0_rgba(0,0,0,0.05)] transition-colors hover:bg-[#be123c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e11d48]"
                 type="submit" disabled={pending}

@@ -10,9 +10,45 @@ export type Submission = {
   name: string;
   amount: string;
   term: string;
+  product?: string;
   submitted: string;
   status: SubmissionStatus;
   hasCoMaker?: boolean;
+  details?: {
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    dateOfBirth?: string;
+    civilStatus?: string;
+    citizenship?: string;
+    gender?: string;
+    placeOfBirth?: string;
+    permanentAddress?: string;
+    permanentBarangay?: string;
+    permanentCityTown?: string;
+    permanentZipcode?: string;
+    permanentRegion?: string;
+    presentAddress?: string;
+    numberOfChildren?: string;
+    contactNumber?: string;
+    emailFacebookAddress?: string;
+    children?: Record<string, string>[];
+    businesses?: Record<string, string>[];
+    grossMonthlyIncome?: string;
+    spouseName?: string;
+    spouseOccupation?: string;
+    spouseAge?: string;
+    spouseCompany?: string;
+    spouseYearsEmployed?: string;
+    spouseMonthlyIncome?: string;
+    relativeName?: string;
+    relativeContactNumber?: string;
+    relativeAddress?: string;
+    realAndPersonalProperties?: string;
+    healthDeclaration?: string;
+    supportingDocuments?: { name: string; size: string }[];
+    additionalFields?: Record<string, string>;
+  };
 };
 
 export type FormSection = {
