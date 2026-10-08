@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import CreditInvestigatorApp from "./credit-investigator-app";
-import { requireUser } from "@/lib/supabase/require-user";
+import { requireUserRole } from "@/lib/supabase/require-user";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 };
 
 export default async function CreditInvestigatorPage() {
-  await requireUser();
-  return <CreditInvestigatorApp />;
+  const { profile } = await requireUserRole("Credit Investigator");
+  return <CreditInvestigatorApp userProfile={profile} />;
 }

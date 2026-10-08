@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import SignOutButton from "@/components/sign-out-button";
+import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import styles from "./cashier.module.css";
 
 const navigation = [
@@ -18,14 +19,14 @@ function Logo() {
   return <div className={styles.logo} aria-label="QVDS"><Image src="/cashier/logo-mark.svg" alt="" width={26.4375} height={27.5625} priority /></div>;
 }
 
-function AccountCard() {
+function AccountCard({ userProfile }: { userProfile: UserProfileIdentity }) {
   return (
     <div className={styles.accountCard}>
       <div className={styles.avatar}>
-        <Image src="/cashier/avatar.png" alt="Maria San Jose" width={40} height={40} />
+        <Image src="/cashier/avatar.png" alt={userProfile.fullName} width={40} height={40} />
         <span className={styles.online}><Image src="/cashier/status-online.svg" alt="" width={10} height={10} /></span>
       </div>
-      <div className={styles.accountText}><strong>Maria San Jose</strong><span>Cashier</span></div>
+      <div className={styles.accountText}><strong>{userProfile.fullName}</strong><span>{userProfile.role}</span></div>
       <SignOutButton iconSrc="/cashier/sign-out.svg" iconSize={16} buttonClassName={styles.signOut} />
     </div>
   );
@@ -440,7 +441,7 @@ function LoanDetail({ loan, onBack, onRecordPayment }: { loan: ActiveLoan; onBac
   );
 }
 
-export default function CashierApp() {
+export default function CashierApp({ userProfile }: { userProfile: UserProfileIdentity }) {
   const [query, setQuery] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [flow, setFlow] = useState<Flow>("home");
@@ -460,8 +461,8 @@ export default function CashierApp() {
   return (
     <div className={styles.shell}>
       <header className={styles.mobileHeader}><Logo /><button type="button" aria-label="Open navigation menu" onClick={() => setMobileOpen(true)}><Image src="/cashier/menu.svg" alt="" width={20} height={20} /></button></header>
-      <aside className={styles.sidebar}><Navigation query={query} onQueryChange={setQuery} activeItem={activeItem} onNavigate={navigate} /><AccountCard /></aside>
-      {mobileOpen ? <div className={styles.mobileMenu}><button className={styles.backdrop} type="button" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)} /><aside className={styles.drawer} aria-label="Mobile navigation"><div className={styles.drawerTop}><Logo /><button type="button" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)}>×</button></div><Navigation query={query} onQueryChange={setQuery} activeItem={activeItem} onNavigate={navigate} /><AccountCard /></aside></div> : null}
+      <aside className={styles.sidebar}><Navigation query={query} onQueryChange={setQuery} activeItem={activeItem} onNavigate={navigate} /><AccountCard userProfile={userProfile} /></aside>
+      {mobileOpen ? <div className={styles.mobileMenu}><button className={styles.backdrop} type="button" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)} /><aside className={styles.drawer} aria-label="Mobile navigation"><div className={styles.drawerTop}><Logo /><button type="button" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)}>×</button></div><Navigation query={query} onQueryChange={setQuery} activeItem={activeItem} onNavigate={navigate} /><AccountCard userProfile={userProfile} /></aside></div> : null}
       <main className={`${styles.main} ${flow === "report" ? styles.reportMain : ""}`}>
         {flow === "home" ? <><header className={styles.pageHeader}><div className={styles.titleRow}><h1>Forms</h1><BranchBadge /></div><p>Record a payment or release approved loan funds.</p></header><section className={styles.cardGrid} aria-label="Cashier forms"><ActionCard title="Payment Intake" description="Record a payment received from a client against an active loan." icon="/cashier/wallet.svg" buttonLabel="Record payment" onSelect={() => { setSelectedLoanId("LN-0266"); setFlow("payment"); }} /><ActionCard title="Release of funds" description="Release approved loan proceeds to a client." icon="/cashier/bank-note.svg" buttonLabel="Record release" onSelect={() => setFlow("release")} /></section></> : null}
         {flow === "payment" ? <PaymentForm key={selectedLoanId} loan={selectedLoan} onCancel={goHome} onConfirm={() => setConfirmation("payment")} /> : null}

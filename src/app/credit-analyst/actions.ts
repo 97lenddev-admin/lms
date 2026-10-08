@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { requireUserRole } from "@/lib/supabase/require-user";
 import { loanColumns, loanRowToSubmission, type LoanRow } from "./loans";
 import type { Submission } from "./data";
 
@@ -42,12 +42,7 @@ function recordRows(section: Record<string, string> | undefined) {
 export async function createLoanApplication(
   form: ApplicationFormData,
 ): Promise<CreateLoanResult> {
-  const supabase = await createClient();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-
-  if (authError || !authData.user) {
-    return { ok: false, error: "Your session has expired. Please sign in again." };
-  }
+  const { supabase } = await requireUserRole("Credit Analyst");
 
   const personal = form.personal ?? {};
   const business = form.business ?? {};

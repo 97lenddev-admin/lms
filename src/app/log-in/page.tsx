@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
+import { getUserHomePath, type UserHomePath } from "@/lib/supabase/user-role";
 
 export const metadata: Metadata = {
   title: "Log in | LMS",
@@ -27,7 +28,17 @@ export default async function LogInPage() {
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.getUser();
-    if (!error && data.user) redirect("/credit-analyst");
+    let destination: UserHomePath | null = null;
+
+    if (!error && data.user) {
+      try {
+        destination = await getUserHomePath(supabase, data.user.id);
+      } catch (profileError) {
+        console.error("[log-in] Unable to load user profile", profileError);
+      }
+    }
+
+    if (destination) redirect(destination);
   }
 
   const requestHeaders = await headers();

@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import SignOutButton from "@/components/sign-out-button";
+import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 
 type NavigationProps = {
   active: "submissions" | "application";
   mobileOpen: boolean;
+  userProfile: UserProfileIdentity;
   onClose: () => void;
   onNavigate: (target: "submissions" | "application") => void;
 };
@@ -18,7 +20,7 @@ function Logo() {
   );
 }
 
-function NavigationContent({ active, onNavigate, showLogo = true }: Pick<NavigationProps, "active" | "onNavigate"> & { showLogo?: boolean }) {
+function NavigationContent({ active, onNavigate, userProfile, showLogo = true }: Pick<NavigationProps, "active" | "onNavigate" | "userProfile"> & { showLogo?: boolean }) {
   return (
     <>
       <div className="flex flex-col gap-5 p-5">
@@ -49,12 +51,12 @@ function NavigationContent({ active, onNavigate, showLogo = true }: Pick<Navigat
       <div className="mt-auto p-4">
         <div className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] p-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
           <div className="relative">
-            <Image className="size-10 rounded-full object-cover" src="/credit-analyst/avatar-figma.png" alt="Juan Dela Cruz" width={40} height={40} />
+            <Image className="size-10 rounded-full object-cover" src="/credit-analyst/avatar-figma.png" alt={userProfile.fullName} width={40} height={40} />
             <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-[#22c55e]" />
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-sm font-semibold text-[#171717]">Juan Dela Cruz</p>
-            <p className="truncate text-sm text-[#525252]">Credit Analyst</p>
+            <p className="truncate text-sm font-semibold text-[#171717]">{userProfile.fullName}</p>
+            <p className="truncate text-sm text-[#525252]">{userProfile.role}</p>
           </div>
           <SignOutButton />
         </div>
@@ -66,7 +68,7 @@ function NavigationContent({ active, onNavigate, showLogo = true }: Pick<Navigat
 export function DesktopNavigation(props: NavigationProps) {
   return (
     <aside className="fixed inset-y-0 left-0 z-20 hidden w-[280px] flex-col border-r border-[#e5e5e5] bg-white lg:flex">
-      <NavigationContent active={props.active} onNavigate={props.onNavigate} />
+      <NavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} />
     </aside>
   );
 }
@@ -90,7 +92,7 @@ export function MobileNavigation(props: NavigationProps) {
           <Logo />
           <button onClick={props.onClose} aria-label="Close navigation menu" className="size-10 rounded-lg text-2xl text-[#737373] hover:bg-[#fafafa]">×</button>
         </div>
-        <NavigationContent active={props.active} onNavigate={props.onNavigate} showLogo={false} />
+        <NavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} showLogo={false} />
       </aside>
     </div>
   );
@@ -99,19 +101,20 @@ export function MobileNavigation(props: NavigationProps) {
 type InvestigatorNavigationProps = {
   active: "review" | "forwarded";
   mobileOpen: boolean;
+  userProfile: UserProfileIdentity;
   onClose: () => void;
   onNavigate: (target: "review" | "forwarded") => void;
 };
 
-function InvestigatorNavigationContent({ active, onNavigate, showLogo = true }: Pick<InvestigatorNavigationProps, "active" | "onNavigate"> & { showLogo?: boolean }) {
-  return <>{<div className="flex flex-col gap-5 p-5">{showLogo && <Logo />}<label className="flex h-9 items-center gap-2 rounded-lg border border-[#d4d4d4] px-3 text-sm text-[#737373] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Image src="/credit-analyst/icons/nav-search.svg" alt="" width={16} height={16} /><input className="min-w-0 flex-1 bg-transparent outline-none" placeholder="Search" /></label></div>}<nav className="flex flex-col gap-1 px-4"><button onClick={() => onNavigate("review")} className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-semibold ${active === "review" ? "bg-[#fafafa] text-[#171717]" : "text-[#404040] hover:bg-[#fafafa]"}`}><Image src="/credit-analyst/icons/list.svg" alt="" width={20} height={20} />To Review</button><button onClick={() => onNavigate("forwarded")} className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-semibold ${active === "forwarded" ? "bg-[#fafafa] text-[#171717]" : "text-[#404040] hover:bg-[#fafafa]"}`}><Image src="/credit-analyst/icons/upload-cloud.svg" alt="" width={20} height={20} />Forwarded</button></nav><div className="mt-auto p-4"><div className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] p-3"><div className="relative"><Image className="size-10 rounded-full object-cover" src="/credit-analyst/avatar-figma.png" alt="Maria San Jose" width={40} height={40} /><span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-[#22c55e]" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Maria San Jose</p><p className="truncate text-sm text-[#525252]">Credit Investigator</p></div><SignOutButton /></div></div></>;
+function InvestigatorNavigationContent({ active, onNavigate, userProfile, showLogo = true }: Pick<InvestigatorNavigationProps, "active" | "onNavigate" | "userProfile"> & { showLogo?: boolean }) {
+  return <>{<div className="flex flex-col gap-5 p-5">{showLogo && <Logo />}<label className="flex h-9 items-center gap-2 rounded-lg border border-[#d4d4d4] px-3 text-sm text-[#737373] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"><Image src="/credit-analyst/icons/nav-search.svg" alt="" width={16} height={16} /><input className="min-w-0 flex-1 bg-transparent outline-none" placeholder="Search" /></label></div>}<nav className="flex flex-col gap-1 px-4"><button onClick={() => onNavigate("review")} className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-semibold ${active === "review" ? "bg-[#fafafa] text-[#171717]" : "text-[#404040] hover:bg-[#fafafa]"}`}><Image src="/credit-analyst/icons/list.svg" alt="" width={20} height={20} />To Review</button><button onClick={() => onNavigate("forwarded")} className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-semibold ${active === "forwarded" ? "bg-[#fafafa] text-[#171717]" : "text-[#404040] hover:bg-[#fafafa]"}`}><Image src="/credit-analyst/icons/upload-cloud.svg" alt="" width={20} height={20} />Forwarded</button></nav><div className="mt-auto p-4"><div className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] p-3"><div className="relative"><Image className="size-10 rounded-full object-cover" src="/credit-analyst/avatar-figma.png" alt={userProfile.fullName} width={40} height={40} /><span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-[#22c55e]" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{userProfile.fullName}</p><p className="truncate text-sm text-[#525252]">{userProfile.role}</p></div><SignOutButton /></div></div></>;
 }
 
 export function InvestigatorDesktopNavigation(props: InvestigatorNavigationProps) {
-  return <aside className="fixed inset-y-0 left-0 z-20 hidden w-[280px] flex-col border-r border-[#e5e5e5] bg-white lg:flex"><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} /></aside>;
+  return <aside className="fixed inset-y-0 left-0 z-20 hidden w-[280px] flex-col border-r border-[#e5e5e5] bg-white lg:flex"><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} /></aside>;
 }
 
 export function InvestigatorMobileNavigation(props: InvestigatorNavigationProps) {
   if (!props.mobileOpen) return null;
-  return <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Close navigation menu" className="absolute inset-0 bg-black/40" onClick={props.onClose} /><aside className="absolute inset-y-0 right-0 flex w-[min(320px,88vw)] flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-[#e5e5e5] p-4"><Logo /><button onClick={props.onClose} aria-label="Close navigation menu" className="size-10 rounded-lg text-2xl text-[#737373]">×</button></div><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} showLogo={false} /></aside></div>;
+  return <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Close navigation menu" className="absolute inset-0 bg-black/40" onClick={props.onClose} /><aside className="absolute inset-y-0 right-0 flex w-[min(320px,88vw)] flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-[#e5e5e5] p-4"><Logo /><button onClick={props.onClose} aria-label="Close navigation menu" className="size-10 rounded-lg text-2xl text-[#737373]">×</button></div><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} showLogo={false} /></aside></div>;
 }

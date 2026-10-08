@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
+import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import { applicationSections, coMakerSections, FormSection, Submission, SubmissionStatus } from "./data";
 import { DesktopNavigation, MobileHeader, MobileNavigation } from "./navigation";
 import { createLoanApplication, type ApplicationFormData } from "./actions";
@@ -653,7 +654,7 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div className="mb-1 flex items-center"><h2 className="text-lg font-semibold">{title}</h2><button onClick={onClose} className="ml-auto text-2xl text-[#a3a3a3]">×</button></div>{children}</div></div>;
 }
 
-export default function CreditAnalystApp({ initialSubmissions, loadError }: { initialSubmissions: Submission[]; loadError?: string }) {
+export default function CreditAnalystApp({ userProfile, initialSubmissions, loadError }: { userProfile: UserProfileIdentity; initialSubmissions: Submission[]; loadError?: string }) {
   const [screen, setScreen] = useState<Screen>({ type: "dashboard" });
   const [submissions, setSubmissions] = useState(initialSubmissions);
   const [draft, setDraft] = useState<ApplicationDraft | null>(null);
@@ -772,7 +773,7 @@ export default function CreditAnalystApp({ initialSubmissions, loadError }: { in
     resetApplication();
     setScreen({ type: "dashboard" });
   };
-  const navProps = { active, mobileOpen: menuOpen, onClose: () => setMenuOpen(false), onNavigate: navigate } as const;
+  const navProps = { active, mobileOpen: menuOpen, userProfile, onClose: () => setMenuOpen(false), onNavigate: navigate } as const;
   const reviewedChildren = decodedRows(applicationFormData.__children);
   const reviewedBusinesses = decodedRows(applicationFormData.__businesses);
   const reviewedDocuments = decodedRows(applicationFormData.__documents).map(document => ({ name: document.name ?? "Document", size: document.size ?? "Unknown size", progress: 100 }));

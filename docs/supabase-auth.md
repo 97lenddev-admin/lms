@@ -16,13 +16,14 @@
 
 ## Flow and behavior
 
-- `/log-in` signs in using `signInWithPassword`; passwords never go in the URL. Successful login goes to `/credit-analyst`.
+- `/log-in` signs in using `signInWithPassword`; passwords never go in the URL. After authentication, the server reads the signed-in user's `user_profiles.roles` value (matched by `user_profiles.id = auth.users.id`) and redirects `Credit Analyst`, `Credit Investigator`, `Branch Manager`, and `Cashier` users to their corresponding dashboards. Missing or unsupported roles are denied a dashboard redirect and shown an account-configuration error.
 - “Remember for 30 days” persists this browser's session cookies for up to 30 days, preserving the original expiry across refreshes. Unchecked uses session cookies. Supabase's own session lifetime settings can end sessions sooner; browsers with session restoration may restore session cookies.
 - `/forgot-password` calls `resetPasswordForEmail` and supports resend. Its success message does not disclose whether an account exists.
 - The reset email returns to `/auth/callback`, which exchanges the PKCE code for a session and redirects to `/reset-password`. Open the email link in the same browser and origin that requested it. Expired links and missing verifier cookies return to the retry form.
 - `/reset-password` validates the session, checks matching passwords, and calls `updateUser`. Successful updates sign out the local session and show a login link.
-- Proxy refreshes sessions and applies private/no-store headers. Both dashboard pages independently validate the user on the server. Their logout icons now sign out.
-- These checks establish authentication only. The existing dashboard data and display names are still demo content. Role-based permissions and database RLS policies must be implemented with the real data model; no tables or authorization roles are created by this change.
+- Proxy refreshes sessions and applies private/no-store headers. Every dashboard validates both the authenticated user and the required `user_profiles.roles` value on the server. A user who requests another role's dashboard is redirected to their own dashboard. Logout icons sign out.
+- Dashboard navigation displays the signed-in user's `user_profiles.full_name` and `user_profiles.roles` values on both desktop and mobile menus.
+- These checks establish authentication and role-based dashboard authorization. The existing dashboard data and display names are still demo content, and every Server Action or data mutation must independently enforce the same authorization. `user_profiles` must have RLS that lets an authenticated user read only their own profile row.
 
 ## Verify with a real account
 

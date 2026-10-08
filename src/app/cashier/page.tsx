@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/lib/supabase/require-user";
+import { requireUserRole } from "@/lib/supabase/require-user";
 import CashierApp from "./cashier-app";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,6 @@ export const metadata: Metadata = {
 };
 
 export default async function CashierPage() {
-  await requireUser();
-  return <CashierApp />;
+  const { profile } = await requireUserRole("Cashier");
+  return <CashierApp userProfile={profile} />;
 }

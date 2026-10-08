@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
 import { rememberCookie } from "@/lib/supabase/cookies";
 import { createClient } from "@/lib/supabase/server";
+import { getUserHomePath, type UserHomePath } from "@/lib/supabase/user-role";
 
 export type LoginState = {
   error: string;
@@ -42,25 +43,54 @@ export async function loginAction(
     maxAge: remember ? maxAge : 0,
   });
 
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const supabase = await createClient();
+  let authResult: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
 
-    if (error) {
-      console.error("[login] Supabase sign-in failed", {
-        code: error.code,
-        message: error.message,
-        name: error.name,
-        status: error.status,
-      });
-      cookieStore.delete(rememberCookie);
-      return { error: authErrorMessage(error.code, error.message, error.status) };
-    }
+  try {
+    authResult = await supabase.auth.signInWithPassword({ email, password });
   } catch (error) {
     console.error("[login] Supabase sign-in request failed", error);
     cookieStore.delete(rememberCookie);
     return { error: "Unable to connect. Please try again or contact your administrator." };
   }
 
-  redirect("/credit-analyst", RedirectType.replace);
+  const { data, error } = authResult;
+
+  if (error) {
+    console.error("[login] Supabase sign-in failed", {
+      code: error.code,
+      message: error.message,
+      name: error.name,
+      status: error.status,
+    });
+    cookieStore.delete(rememberCookie);
+    return { error: authErrorMessage(error.code, error.message, error.status) };
+  }
+
+  let destination: UserHomePath | null = null;
+
+  try {
+    destination = await getUserHomePath(supabase, data.user.id);
+  } catch (profileError) {
+    console.error("[login] Unable to load user profile", profileError);
+    await supabase.auth.signOut();
+    cookieStore.delete(rememberCookie);
+    return {
+      error:
+        "Unable to load your account role. Please try again or contact your administrator.",
+    };
+  }
+
+  if (!destination) {
+    console.error("[login] User profile has no supported role", {
+      userId: data.user.id,
+    });
+    await supabase.auth.signOut();
+    cookieStore.delete(rememberCookie);
+    return {
+      error: "Your account role is not configured. Please contact your administrator.",
+    };
+  }
+
+  redirect(destination, RedirectType.replace);
 }
