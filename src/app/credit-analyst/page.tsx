@@ -12,15 +12,23 @@ export const metadata: Metadata = {
 
 export default async function CreditAnalystPage() {
   const { profile, supabase } = await requireUserRole("Credit Analyst");
-  const { data, error } = await supabase
-    .from("loans")
-    .select(loanColumns)
-    .order("created_at", { ascending: false });
+  const [{ data, error }, { data: coMakers }] = await Promise.all([
+    supabase
+      .from("loans")
+      .select(loanColumns)
+      .order("created_at", { ascending: false }),
+    supabase.from("loan_co_makers").select("loan_id"),
+  ]);
+  const loansWithCoMakers = new Set(
+    (coMakers ?? []).map(coMaker => coMaker.loan_id as string),
+  );
 
   return (
     <CreditAnalystApp
       userProfile={profile}
-      initialSubmissions={((data ?? []) as LoanRow[]).map(loanRowToSubmission)}
+      initialSubmissions={((data ?? []) as LoanRow[]).map(row =>
+        loanRowToSubmission(row, loansWithCoMakers.has(row.id)),
+      )}
       loadError={error ? "Unable to load loan applications right now." : undefined}
     />
   );

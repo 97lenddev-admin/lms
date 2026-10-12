@@ -6,6 +6,7 @@ export type SubmissionStatus =
   | "Inactive";
 
 export type Submission = {
+  databaseId?: string;
   id: string;
   name: string;
   amount: string;

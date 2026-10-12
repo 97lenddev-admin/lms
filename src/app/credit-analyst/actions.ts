@@ -11,9 +11,28 @@ export type CreateLoanResult =
   | { ok: true; loan: Submission }
   | { ok: false; error: string };
 
+export type CreateCoMakerResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 function cleanText(value: string | undefined) {
   const cleaned = value?.trim();
   return cleaned || undefined;
+}
+
+function coMakerPresentAddressStatus(value: string | undefined) {
+  const normalized = cleanText(value)?.toLowerCase();
+
+  const statuses: Record<string, string> = {
+    rented: "rented",
+    "living with parents": "living_with_parents",
+    owned: "owned",
+    mortgaged: "mortgaged",
+    other: "others",
+    others: "others",
+  };
+
+  return normalized ? statuses[normalized] : undefined;
 }
 
 function numberValue(value: string | undefined) {
@@ -155,4 +174,119 @@ export async function createLoanApplication(
 
   revalidatePath("/credit-analyst");
   return { ok: true, loan: loanRowToSubmission(data as LoanRow) };
+}
+
+export async function createLoanCoMaker(
+  loanId: string,
+  form: ApplicationFormData,
+): Promise<CreateCoMakerResult> {
+  const { supabase } = await requireUserRole("Credit Analyst");
+  const personal = form["co-personal"] ?? {};
+  const address = form["co-address"] ?? {};
+  const household = form["co-household"] ?? {};
+  const business = form["co-business"] ?? {};
+  const remarks = form["co-remarks"] ?? {};
+  const presentAddressStatus = coMakerPresentAddressStatus(
+    address["Present address"],
+  );
+  const homeAddress = cleanText(address["Home address"]);
+  const barangay = cleanText(address["Home barangay"]);
+  const cityTown = cleanText(address["Home city/town"]);
+  const zipCode = cleanText(address["Home ZIP code"]);
+  const region = cleanText(address["Home region"]);
+  const fullName =
+    cleanText(personal["Full name"]) ??
+    cleanText(
+      [personal["First name"], personal["Middle name"], personal["Last name"]]
+        .map(value => value?.trim())
+        .filter(Boolean)
+        .join(" "),
+    );
+
+  if (
+    !loanId ||
+    !fullName ||
+    !homeAddress ||
+    !barangay ||
+    !cityTown ||
+    !zipCode ||
+    !region ||
+    !presentAddressStatus
+  ) {
+    return {
+      ok: false,
+      error:
+        "The loan, co-maker's full name, home address, barangay, city/town, ZIP code, region, and present address status are required.",
+    };
+  }
+
+  const numberOfChildren = household["Number of children"];
+  const grossMonthlyIncome = business["Gross monthly income"];
+  const invalidField = [
+    ["Number of children", numberOfChildren],
+    ["Gross monthly income", grossMonthlyIncome],
+  ].find(([, value]) => invalidNumericValue(value));
+
+  if (invalidField) {
+    return { ok: false, error: `${invalidField[0]} must contain a valid number.` };
+  }
+
+  const optionalFields = {
+    date_of_birth: cleanText(personal["Date of birth"]),
+    civil_status: cleanText(personal["Civil status"]),
+    citizenship: cleanText(personal.Citizenship),
+    gender: cleanText(personal.Gender),
+    place_of_birth: cleanText(personal["Place of birth"]),
+    contact_number: cleanText(personal["Contact number"]),
+    email: cleanText(personal["Email / Facebook address"]),
+    relationship_to_borrower: cleanText(personal["Relationship to borrower"]),
+    provincial_address: cleanText(address["Provincial address"]),
+    provincial_barangay: cleanText(address["Provincial barangay"]),
+    provincial_city_town: cleanText(address["Provincial city/town"]),
+    provincial_zip_code: cleanText(address["Provincial ZIP code"]),
+    provincial_region: cleanText(address["Provincial region"]),
+    number_of_children: numberValue(numberOfChildren) || undefined,
+    children: recordRows(form.__children),
+    businesses: recordRows(form.__businesses),
+    gross_monthly_income: numberValue(grossMonthlyIncome) || undefined,
+    overall_remarks: cleanText(remarks["Overall remarks"]),
+  };
+
+  const { error } = await supabase.from("loan_co_makers").insert({
+    loan_id: loanId,
+    full_name: fullName,
+    home_address: homeAddress,
+    present_address: homeAddress,
+    present_address_status: presentAddressStatus,
+    barangay,
+    city_town: cityTown,
+    zip_code: zipCode,
+    region,
+    ...Object.fromEntries(
+      Object.entries(optionalFields).filter(([, value]) => value !== undefined),
+    ),
+  });
+
+  if (error) {
+    console.error("Unable to create loan co-maker", error);
+    if (error.code === "23503") {
+      return { ok: false, error: "The selected loan no longer exists." };
+    }
+    if (error.code === "23505") {
+      return { ok: false, error: "A co-maker is already attached to this loan." };
+    }
+    if (error.code === "42501") {
+      return { ok: false, error: "You do not have permission to add a co-maker." };
+    }
+    if (error.code === "23514") {
+      return {
+        ok: false,
+        error: "The selected present address status is not accepted. Please choose a status and try again.",
+      };
+    }
+    return { ok: false, error: "The co-maker could not be saved. Please try again." };
+  }
+
+  revalidatePath("/credit-analyst");
+  return { ok: true };
 }

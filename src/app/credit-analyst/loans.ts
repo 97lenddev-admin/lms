@@ -91,7 +91,7 @@ function documentDetails(value: unknown) {
   };
 }
 
-export function loanRowToSubmission(row: LoanRow): Submission {
+export function loanRowToSubmission(row: LoanRow, hasCoMaker = false): Submission {
   const middleName = row.middle_name?.trim();
   const givenNames = [row.first_name, middleName].filter(Boolean).join(" ");
   const documents = documentDetails(row.supporting_documents);
@@ -103,6 +103,7 @@ export function loanRowToSubmission(row: LoanRow): Submission {
   }).format(Number(value) || 0).replace("PHP", "₱").trim();
 
   return {
+    databaseId: row.id,
     id: row.loan_id || row.id,
     name: [row.last_name, givenNames].filter(Boolean).join(", "),
     amount: new Intl.NumberFormat("en-PH", {
@@ -121,6 +122,7 @@ export function loanRowToSubmission(row: LoanRow): Submission {
       year: "numeric",
     }).format(new Date(row.created_at)),
     status: normalizeStatus(row.status),
+    hasCoMaker,
     details: {
       firstName: row.first_name,
       middleName: middleName || undefined,

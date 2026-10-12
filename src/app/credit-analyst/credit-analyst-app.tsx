@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import { applicationSections, coMakerSections, FormSection, Submission, SubmissionStatus } from "./data";
 import { DesktopNavigation, MobileHeader, MobileNavigation } from "./navigation";
-import { createLoanApplication, type ApplicationFormData } from "./actions";
+import { createLoanApplication, createLoanCoMaker, type ApplicationFormData } from "./actions";
 
 type Screen =
   | { type: "dashboard" }
@@ -222,7 +222,7 @@ function Dashboard({ submissions, loadError, draft, onNew, onResumeDraft, onDisc
   );
 }
 
-function Checklist({ sections, sectionData = {}, completedIds, startedIds, onSection, onReview, onSaveDraft, coMaker }: { sections: FormSection[]; sectionData?: FormDataState; completedIds: Set<string>; startedIds: Set<string>; onSection: (id: string) => void; onReview: () => void; onSaveDraft?: () => void; coMaker?: boolean }) {
+function Checklist({ sections, sectionData = {}, completedIds, startedIds, onSection, onReview, onSaveDraft, coMaker, error, pending = false }: { sections: FormSection[]; sectionData?: FormDataState; completedIds: Set<string>; startedIds: Set<string>; onSection: (id: string) => void; onReview: () => void; onSaveDraft?: () => void; coMaker?: boolean; error?: string; pending?: boolean }) {
   const completedCount = sections.filter(section => completedIds.has(section.id)).length;
   const progress = completedCount / sections.length;
   return (
@@ -230,7 +230,8 @@ function Checklist({ sections, sectionData = {}, completedIds, startedIds, onSec
       {coMaker && <div className="mb-6 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4"><p className="text-xs font-semibold uppercase text-[#525252]">Loan reference</p><p className="mt-1 text-lg font-medium">LN-0023 · Reyes, Juan</p><p className="mt-1 text-sm text-[#737373]">₱60,000.00 applied · ₱60,000.00 approved</p><p className="mt-1 text-sm text-[#737373]">Released Mar 5, 2026</p></div>}
       <div className="mb-6"><div className="flex text-sm text-[#525252]"><span>{completedCount} of {sections.length} sections complete</span><span className="ml-auto">{Math.round(progress * 100)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e5e5e5]"><div className="h-full rounded-full bg-[#e11d48]" style={{ width: `${progress * 100}%` }} /></div></div>
       <div className="flex flex-col gap-3">{sections.map((section, index) => { const complete = completedIds.has(section.id); const inProgress = !complete && startedIds.has(section.id); const enteredValues = Object.values(sectionData[section.id] ?? {}).filter(Boolean); const summary = enteredValues.slice(0, 2).join(" · "); return <button key={section.id} onClick={() => onSection(section.id)} className={`flex min-h-[70px] items-center rounded-xl border bg-white p-4 text-left ${inProgress ? "border-[#f59e0b]" : "border-[#e5e5e5]"}`}><span className={`mr-4 flex size-9 shrink-0 items-center justify-center rounded-full ${complete ? "bg-[#dcfce7] text-[#16a34a]" : inProgress ? "bg-[#fef9c3] text-[#ca8a04]" : "bg-[#f5f5f5] text-[#737373]"}`}>{complete ? "✓" : index + 1}</span><span className="min-w-0 flex-1"><span className="block font-medium text-[#525252]">{section.title}</span>{summary && <span className="mt-0.5 block truncate text-sm text-[#737373]">{summary}</span>}</span>{inProgress && <span className="mr-3 rounded-full border border-[#fde047] bg-[#fefce8] px-2 py-1 text-xs text-[#a16207]">In progress</span>}<span className="text-xl text-[#a3a3a3]">›</span></button>; })}</div>
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-[#e5e5e5] bg-white lg:left-[280px]"><div className="mx-auto flex max-w-3xl gap-3 px-4 py-4 lg:px-8">{onSaveDraft && <button type="button" onClick={onSaveDraft} className={`${secondaryButton} flex-1`}>Save draft</button>}<button onClick={onReview} className={`${primaryButton} flex-1 ${progress < 1 ? "opacity-50" : ""}`}>{coMaker ? "Save co-maker" : "Review & submit"}</button></div></div>
+      {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-[#e5e5e5] bg-white lg:left-[280px]"><div className="mx-auto flex max-w-3xl gap-3 px-4 py-4 lg:px-8">{onSaveDraft && <button type="button" onClick={onSaveDraft} className={`${secondaryButton} flex-1`}>Save draft</button>}<button disabled={pending} onClick={onReview} className={`${primaryButton} flex-1 ${progress < 1 ? "opacity-50" : ""} disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Saving…" : coMaker ? "Save co-maker" : "Review & submit"}</button></div></div>
     </div>
   );
 }
@@ -471,11 +472,13 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
   );
 }
 
-function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCancel: () => void; onSave: () => void }) {
+function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCancel: () => void; onSave: (form: ApplicationFormData) => Promise<string | undefined> }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [childrenCount, setChildrenCount] = useState("2");
   const [children, setChildren] = useState<Record<string, string>[]>([{}, {}]);
   const [businesses, setBusinesses] = useState<Record<string, string>[]>([{}, {}]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
   const updateValue = (label: string, value: string) => setValues(current => ({ ...current, [label]: value, ...(label === "Date of birth" ? { Age: calculateAge(value) } : {}) }));
   const changeChildrenCount = (value: string) => {
     const count = Math.min(20, Math.max(0, Math.floor(numericValue(value))));
@@ -487,7 +490,30 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
   const sectionTitle = (title: string) => <h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase leading-5 text-[#404040]">{title}</h2>;
   const field = (label: string, className = "") => <div className={className}><FormField label={label} value={values[label] ?? ""} readOnly={label === "Age"} textarea={label === "Overall remarks"} onValueChange={value => updateValue(label, value)} /></div>;
   return (
-    <form onSubmit={(event) => { event.preventDefault(); onSave(); }} className="hidden px-8 pb-8 pt-8 lg:block">
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (pending) return;
+      const submittedForm = new FormData(event.currentTarget);
+      const submittedValues: Record<string, string> = {
+        ...values,
+        "Present address": String(submittedForm.get("presentAddress") ?? ""),
+      };
+      setPending(true);
+      setError("");
+      const personalFields = ["Full name", "Date of birth", "Civil status", "Citizenship", "Gender", "Place of birth", "Contact number", "Email / Facebook address", "Relationship to borrower"];
+      const addressFields = ["Home address", "Home barangay", "Home city/town", "Home ZIP code", "Home region", "Provincial address", "Provincial barangay", "Provincial city/town", "Provincial ZIP code", "Provincial region", "Present address"];
+      const message = await onSave({
+        "co-personal": Object.fromEntries(personalFields.map(label => [label, submittedValues[label] ?? ""])),
+        "co-address": Object.fromEntries(addressFields.map(label => [label, submittedValues[label] ?? ""])),
+        "co-household": { "Number of children": childrenCount },
+        "co-business": { "Gross monthly income": submittedValues["Gross monthly income"] ?? "" },
+        "co-remarks": { "Overall remarks": submittedValues["Overall remarks"] ?? "" },
+        __children: encodedRows(children),
+        __businesses: encodedRows(businesses),
+      });
+      setPending(false);
+      if (message) setError(message);
+    }} className="hidden px-8 pb-8 pt-8 lg:block">
       <div className="mx-auto max-w-[1096px] rounded-xl border border-[#e5e5e5] bg-white px-6 pt-6">
         <section>
           {sectionTitle("Loan reference")}
@@ -502,6 +528,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
         <section className="mt-6">
           {sectionTitle("Co-maker personal information")}
           <div className="mt-6 grid grid-cols-3 gap-6">
+            {field("Full name", "col-span-3")}
             {field("Age")}{field("Civil status")}{field("Date of birth")}
             {field("Citizenship")}{field("Gender")}{field("Place of birth")}
             {field("Contact number")}{field("Email / Facebook address")}{field("Relationship to borrower")}
@@ -511,7 +538,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
           <div className="mt-6">{field("Provincial address")}</div>
           <div className="mt-6 grid grid-cols-4 gap-6">{field("Provincial barangay")}{field("Provincial city/town")}{field("Provincial ZIP code")}{field("Provincial region")}</div>
           <div className="mt-6 grid grid-cols-2 gap-6">
-            <fieldset><legend className="text-xs font-semibold uppercase leading-[18px] text-[#404040]">Present address</legend><div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2 text-sm leading-5 text-[#404040]">{["Rented", "Living with parents", "Owned", "Mortgaged", "Others"].map(option => <label key={option} className="flex items-center gap-2"><input required type="radio" name="co-residence" className="size-4 accent-[#e11d48]" />{option}</label>)}</div></fieldset>
+            <fieldset><legend className="text-xs font-semibold uppercase leading-[18px] text-[#404040]">Present address</legend><div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2 text-sm leading-5 text-[#404040]">{["Rented", "Living with parents", "Owned", "Mortgaged", "Others"].map(option => <label key={option} className="flex items-center gap-2"><input required checked={values["Present address"] === option} onChange={() => updateValue("Present address", option)} type="radio" name="presentAddress" value={option} className="size-4 accent-[#e11d48]" />{option}</label>)}</div></fieldset>
             <FormField label="Number of children" value={childrenCount} onValueChange={changeChildrenCount} />
           </div>
           <div className="mt-6">
@@ -533,9 +560,10 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
         </section>
 
         <div className="sticky bottom-0 -mx-6 mt-8 flex items-center justify-end gap-3 border-t border-[#e5e5e5] bg-white px-6 py-4">
+          {error && <p role="alert" className="mr-auto text-sm text-red-700">{error}</p>}
           <button type="button" onClick={onCancel} className={secondaryButton}>Cancel</button>
           <button type="button" className={secondaryButton}>Save draft</button>
-          <button type="submit" className={primaryButton}>Save co-borrower</button>
+          <button disabled={pending} type="submit" className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Saving…" : "Save co-borrower"}</button>
         </div>
       </div>
     </form>
@@ -667,11 +695,14 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   const [applicationFormData, setApplicationFormData] = useState<FormDataState>({});
   const [coMakerFormData, setCoMakerFormData] = useState<FormDataState>({});
   const [childData, setChildData] = useState<Record<string, string>>({});
+  const [coMakerChildData, setCoMakerChildData] = useState<Record<string, string>>({});
   const [childAdded, setChildAdded] = useState(false);
   const [businesses, setBusinesses] = useState<Record<string, string>[]>([]);
   const [coBorrowerBusinesses, setCoBorrowerBusinesses] = useState<Record<string, string>[]>([]);
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [coMakerError, setCoMakerError] = useState("");
+  const [coMakerSubmitting, setCoMakerSubmitting] = useState(false);
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(applicationDraftKey);
@@ -701,6 +732,15 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     resetApplication();
     setEditingDraft(false);
     setScreen({ type: "application" });
+  };
+  const startCoMaker = (loan: Submission) => {
+    setCoMakerFormData({});
+    setCompletedCoMakerSections(new Set());
+    setStartedCoMakerSections(new Set());
+    setCoMakerChildData({});
+    setCoBorrowerBusinesses([]);
+    setCoMakerError("");
+    setScreen({ type: "co-maker", loan });
   };
   const persistDraft = (desktopDraft?: DesktopDraftData) => {
     const nextDraft: ApplicationDraft = {
@@ -773,6 +813,39 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     resetApplication();
     setScreen({ type: "dashboard" });
   };
+  const submitCoMaker = async (
+    loan: Submission,
+    form: ApplicationFormData,
+  ): Promise<string | undefined> => {
+    if (coMakerSubmitting) return "The co-maker is already being saved.";
+    if (!loan.databaseId) {
+      const message = "This loan is not linked to a database record.";
+      setCoMakerError(message);
+      return message;
+    }
+
+    setCoMakerSubmitting(true);
+    setCoMakerError("");
+    const result = await createLoanCoMaker(loan.databaseId, form);
+    setCoMakerSubmitting(false);
+
+    if (!result.ok) {
+      setCoMakerError(result.error);
+      return result.error;
+    }
+
+    const savedLoan = { ...loan, hasCoMaker: true };
+    setSubmissions(current =>
+      current.map(item => item.databaseId === loan.databaseId ? savedLoan : item),
+    );
+    setCoMakerFormData({});
+    setCompletedCoMakerSections(new Set());
+    setStartedCoMakerSections(new Set());
+    setCoMakerChildData({});
+    setCoBorrowerBusinesses([]);
+    setScreen({ type: "submission", loan: savedLoan });
+    return undefined;
+  };
   const navProps = { active, mobileOpen: menuOpen, userProfile, onClose: () => setMenuOpen(false), onNavigate: navigate } as const;
   const reviewedChildren = decodedRows(applicationFormData.__children);
   const reviewedBusinesses = decodedRows(applicationFormData.__businesses);
@@ -792,7 +865,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     updatedAt: draft?.updatedAt ?? "",
   };
   let content: ReactNode;
-  if (screen.type === "dashboard") content = <Dashboard submissions={submissions} loadError={loadError} draft={draft} onNew={startNewApplication} onResumeDraft={resumeDraft} onDiscardDraft={discardDraft} onView={loan => setScreen({ type: "submission", loan })} onCoMaker={loan => setScreen({ type: "co-maker", loan })} />;
+  if (screen.type === "dashboard") content = <Dashboard submissions={submissions} loadError={loadError} draft={draft} onNew={startNewApplication} onResumeDraft={resumeDraft} onDiscardDraft={discardDraft} onView={loan => setScreen({ type: "submission", loan })} onCoMaker={startCoMaker} />;
   else if (screen.type === "application") content = (
     <PageShell title={[applicationFormData.personal?.["First name"], applicationFormData.personal?.["Last name"]].filter(Boolean).join(" ") || "New application"} desktopTitle="New loan application" supportingText="Fill in the client's details and submit for review." back={() => setScreen({ type: "dashboard" })} action={<button onClick={discardDraft} className="text-sm font-semibold text-[#be123c]">Discard</button>}>
       <div className="lg:hidden">
@@ -806,10 +879,10 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   else if (screen.type === "child") content = <ChildForm values={childData} onFieldChange={(field, value) => setChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "section", sectionId: "personal" })} onDone={() => { setChildAdded(true); setScreen({ type: "section", sectionId: "personal" }); }} />;
   else if (screen.type === "business") { const businessIndex = screen.businessIndex; content = <BusinessForm number={(businessIndex ?? businesses.length) + 1} values={businessIndex === undefined ? {} : businesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "section", sectionId: "business" })} onRemove={() => { if (businessIndex !== undefined) setBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "section", sectionId: "business" }); }} onSave={business => { setBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedApplicationSections, startedApplicationSections, "business"); setScreen({ type: "section", sectionId: "business" }); }} />; }
   else if (screen.type === "review") content = <Review values={applicationFormData} error={submitError} pending={submitting} onBack={() => setScreen({ type: "application" })} onSubmit={submitApplication} />;
-  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setScreen({ type: "dashboard" })} action={<button onClick={() => setScreen({ type: "dashboard" })} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => setScreen({ type: "submission", loan: screen.loan })} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={() => setScreen({ type: "submission", loan: screen.loan })} /></PageShell>;
+  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setScreen({ type: "dashboard" })} action={<button onClick={() => setScreen({ type: "dashboard" })} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} error={coMakerError} pending={coMakerSubmitting} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => submitCoMaker(screen.loan, { ...coMakerFormData, __children: encodedRows(Object.keys(coMakerChildData).length ? [coMakerChildData] : []), __businesses: encodedRows(coBorrowerBusinesses) })} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={form => submitCoMaker(screen.loan, form)} /></PageShell>;
   else if (screen.type === "co-section") content = <SectionForm section={coMakerSections.find(item => item.id === screen.sectionId)!} values={coMakerFormData[screen.sectionId] ?? {}} businesses={coBorrowerBusinesses} onFieldChange={(field, value) => { updateSectionData(setCoMakerFormData, screen.sectionId, field, value); addToSet(setStartedCoMakerSections, startedCoMakerSections, screen.sectionId); }} onBack={() => setScreen({ type: "co-maker", loan: screen.loan })} onDone={() => { addToSet(setCompletedCoMakerSections, completedCoMakerSections, screen.sectionId); setScreen({ type: "co-maker", loan: screen.loan }); }} onChild={() => setScreen({ type: "co-child", loan: screen.loan })} onBusiness={businessIndex => setScreen({ type: "co-business-entry", businessIndex, loan: screen.loan })} />;
-  else if (screen.type === "co-child") content = <ChildForm values={childData} onFieldChange={(field, value) => setChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} onDone={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} />;
+  else if (screen.type === "co-child") content = <ChildForm values={coMakerChildData} onFieldChange={(field, value) => setCoMakerChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} onDone={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} />;
   else if (screen.type === "co-business-entry") { const businessIndex = screen.businessIndex; const loan = screen.loan; content = <BusinessForm number={(businessIndex ?? coBorrowerBusinesses.length) + 1} values={businessIndex === undefined ? {} : coBorrowerBusinesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "co-section", sectionId: "co-business", loan })} onRemove={() => { if (businessIndex !== undefined) setCoBorrowerBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} onSave={business => { setCoBorrowerBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedCoMakerSections, startedCoMakerSections, "co-business"); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} />; }
-  else content = <SubmissionView loan={screen.loan} onBack={() => setScreen({ type: "dashboard" })} onCoMaker={() => setScreen({ type: "co-maker", loan: screen.loan })} />;
+  else content = <SubmissionView loan={screen.loan} onBack={() => setScreen({ type: "dashboard" })} onCoMaker={() => startCoMaker(screen.loan)} />;
   return <div className="min-h-screen bg-white text-[#171717]"><DesktopNavigation {...navProps} /><MobileHeader onOpen={() => setMenuOpen(true)} /><MobileNavigation {...navProps} /><div className="lg:pl-[280px]">{content}</div></div>;
 }
