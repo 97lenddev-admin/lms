@@ -16,7 +16,7 @@ for (const route of pages) {
       "utf8",
     );
 
-    assert.match(source, /\{ profile(?:, supabase)? \} = await requireUserRole/);
+    assert.match(source, /\{ (?:user, )?profile(?:, supabase)? \} = await requireUserRole/);
     assert.match(source, /userProfile=\{profile\}/);
   });
 }
