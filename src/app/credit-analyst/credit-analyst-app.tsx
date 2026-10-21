@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import { applicationSections, coMakerSections, FormSection, Submission, SubmissionStatus } from "./data";
 import { DesktopNavigation, MobileHeader, MobileNavigation } from "./navigation";
-import { createLoanApplication, createLoanCoMaker, type ApplicationFormData } from "./actions";
+import { createLoanApplication, createLoanCoMaker, getLoanCoMaker, getLoanCoMakers, type ApplicationFormData } from "./actions";
 
 type Screen =
   | { type: "dashboard" }
@@ -16,6 +16,7 @@ type Screen =
   | { type: "co-business-entry"; businessIndex?: number; loan: Submission }
   | { type: "review" }
   | { type: "co-maker"; loan: Submission }
+  | { type: "co-maker-view"; loan: Submission; returnTo: "dashboard" | "submission" }
   | { type: "co-section"; sectionId: string; loan: Submission }
   | { type: "co-child"; loan: Submission }
   | { type: "submission"; loan: Submission };
@@ -148,7 +149,7 @@ function PageShell({ children, title, desktopTitle, supportingText, back, action
   );
 }
 
-function Dashboard({ submissions, loadError, draft, onNew, onResumeDraft, onDiscardDraft, onView, onCoMaker }: { submissions: Submission[]; loadError?: string; draft: ApplicationDraft | null; onNew: () => void; onResumeDraft: () => void; onDiscardDraft: () => void; onView: (loan: Submission) => void; onCoMaker: (loan: Submission) => void }) {
+function Dashboard({ submissions, loadError, coMakerLoadingLoanId, draft, onNew, onResumeDraft, onDiscardDraft, onView, onCoMaker }: { submissions: Submission[]; loadError?: string; coMakerLoadingLoanId?: string; draft: ApplicationDraft | null; onNew: () => void; onResumeDraft: () => void; onDiscardDraft: () => void; onView: (loan: Submission) => void; onCoMaker: (loan: Submission) => void }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"All" | SubmissionStatus>("All");
   const [page, setPage] = useState(1);
@@ -162,8 +163,8 @@ function Dashboard({ submissions, loadError, draft, onNew, onResumeDraft, onDisc
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = sorted.slice((page - 1) * pageSize, page * pageSize);
   return (
-    <main className="min-h-screen bg-white px-4 pb-12 pt-8 lg:px-8">
-      <div className="mx-auto max-w-[1096px]">
+    <main className="min-h-screen bg-white px-4 pb-12 pt-8 xl:px-6">
+      <div className="mx-auto max-w-[1240px]">
         <div className="lg:hidden">
           <h1 className="text-xl font-semibold leading-[30px] text-[#171717]">My Submissions</h1>
           <label className="mt-5 flex h-10 items-center gap-2 rounded-lg border border-[#d4d4d4] bg-white px-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -176,7 +177,7 @@ function Dashboard({ submissions, loadError, draft, onNew, onResumeDraft, onDisc
           <button onClick={onNew} className={`${primaryButton} mt-3 w-full gap-1`}><Image src="/credit-analyst/icons/plus-white.svg" alt="" width={20} height={20} />New Application</button>
         </div>
         <div className="overflow-x-auto pb-1">
-        <div className="hidden lg:grid lg:min-w-[1096px] lg:grid-cols-[1fr_280px_93px_165px] lg:items-center lg:gap-3">
+        <div className="hidden lg:grid lg:min-w-[1072px] lg:grid-cols-[1fr_280px_93px_165px] lg:items-center lg:gap-3">
           <h1 className="whitespace-nowrap text-xl font-semibold leading-[30px] text-[#171717]">My Submissions</h1>
           <label className="flex h-10 items-center gap-2 rounded-lg border border-[#d4d4d4] bg-white px-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
             <Image src="/credit-analyst/icons/search.svg" alt="" width={16} height={16} />
@@ -206,16 +207,16 @@ function Dashboard({ submissions, loadError, draft, onNew, onResumeDraft, onDisc
         {!loadError && submissions.length === 0 && <p className="mt-6 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-8 text-center text-sm text-[#525252]">No loan applications yet. Create the first application to get started.</p>}
 
         {submissions.length > 0 && <div className="mt-6 hidden overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] lg:block">
-          <table className="w-full min-w-[1096px] table-fixed border-collapse text-left text-sm">
-            <colgroup><col className="w-[109px]"/><col className="w-[213px]"/><col className="w-[132px]"/><col className="w-[116px]"/><col className="w-[170px]"/><col className="w-[130px]"/><col className="w-[226px]"/></colgroup>
+          <table className="w-full min-w-[1072px] table-fixed border-collapse text-left text-sm">
+            <colgroup><col className="w-[112px]"/><col className="w-[190px]"/><col className="w-[126px]"/><col className="w-[100px]"/><col className="w-[154px]"/><col className="w-[120px]"/><col className="w-[270px]"/></colgroup>
             <thead className="h-11 bg-[#fafafa] text-xs uppercase text-[#737373]"><tr>{["Loan ID", "Name", "Amount", "Term", "Date submitted", "Status", "Action"].map(h => <th className="px-6 py-3 font-semibold" key={h}>{h === "Date submitted" ? <button type="button" onClick={() => { setDateSort(current => current === "desc" ? "asc" : "desc"); setPage(1); }} className="inline-flex items-center gap-1 whitespace-nowrap text-left uppercase" aria-label={`Sort by date submitted${dateSort ? ` ${dateSort === "asc" ? "ascending" : "descending"}` : ""}`}>Date submitted <Image className={dateSort === "asc" ? "rotate-180" : ""} src="/credit-analyst/icons/arrow-down.svg" alt="" width={12} height={12} /></button> : h}</th>)}</tr></thead>
-            <tbody>{paginated.map(loan => <tr key={loan.id} className="h-[72px] border-t border-[#e5e5e5] text-[#404040]"><td className="whitespace-nowrap px-6">{loan.id}</td><td className="whitespace-nowrap px-6">{loan.name}</td><td className="whitespace-nowrap px-6">{loan.amount}</td><td className="whitespace-nowrap px-6">{loan.term}</td><td className="whitespace-nowrap px-6">{loan.submitted}</td><td className="whitespace-nowrap px-6"><StatusBadge status={loan.status} /></td><td className="px-6"><div className="flex flex-nowrap gap-3"><button onClick={() => onView(loan)} className={`${secondaryButton} h-9 gap-2 px-3`}><Image src="/credit-analyst/icons/eye.svg" alt="" width={20} height={20} />View</button><button onClick={() => onCoMaker(loan)} className={`${secondaryButton} h-9 gap-2 px-3`}><Image src="/credit-analyst/icons/user-plus.svg" alt="" width={20} height={20} />Add</button></div></td></tr>)}</tbody>
+            <tbody>{paginated.map(loan => <tr key={loan.id} className="h-[72px] border-t border-[#e5e5e5] text-[#404040]"><td className="whitespace-nowrap px-6">{loan.id}</td><td className="whitespace-nowrap px-6">{loan.name}</td><td className="whitespace-nowrap px-6">{loan.amount}</td><td className="whitespace-nowrap px-6">{loan.term}</td><td className="whitespace-nowrap px-6">{loan.submitted}</td><td className="whitespace-nowrap px-6"><StatusBadge status={loan.status} /></td><td className="px-6"><div className="flex flex-nowrap gap-3"><button onClick={() => onView(loan)} className={`${secondaryButton} h-9 gap-2 px-3`}><Image src="/credit-analyst/icons/eye.svg" alt="" width={20} height={20} />View</button><button disabled={coMakerLoadingLoanId === loan.id} onClick={() => onCoMaker(loan)} className={`${secondaryButton} h-9 gap-2 px-3 disabled:cursor-wait disabled:opacity-60`}><Image src={loan.coMaker ? "/credit-analyst/icons/eye.svg" : "/credit-analyst/icons/user-plus.svg"} alt="" width={20} height={20} />{coMakerLoadingLoanId === loan.id ? "Loading…" : loan.coMaker ? "Co-maker" : "Add"}</button></div></td></tr>)}</tbody>
           </table>
-          <div className="flex h-16 min-w-[1096px] items-center border-t border-[#e5e5e5] px-6 text-sm text-[#404040]"><span>Page {page} of {pageCount}</span><select className="ml-3 h-9 rounded-lg border border-[#d4d4d4] bg-white px-3 text-sm"><option>10 per page</option></select><button disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))} className={`${secondaryButton} ml-auto h-9 disabled:cursor-not-allowed disabled:opacity-50`}>Previous</button><button disabled={page === pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))} className={`${secondaryButton} ml-3 h-9 disabled:cursor-not-allowed disabled:opacity-50`}>Next</button></div>
+          <div className="flex h-16 min-w-[1072px] items-center border-t border-[#e5e5e5] px-6 text-sm text-[#404040]"><span>Page {page} of {pageCount}</span><select className="ml-3 h-9 rounded-lg border border-[#d4d4d4] bg-white px-3 text-sm"><option>10 per page</option></select><button disabled={page === 1} onClick={() => setPage(current => Math.max(1, current - 1))} className={`${secondaryButton} ml-auto h-9 disabled:cursor-not-allowed disabled:opacity-50`}>Previous</button><button disabled={page === pageCount} onClick={() => setPage(current => Math.min(pageCount, current + 1))} className={`${secondaryButton} ml-3 h-9 disabled:cursor-not-allowed disabled:opacity-50`}>Next</button></div>
         </div>}
 
         <div className="mt-3 flex flex-col gap-3 lg:hidden">
-          {filtered.map(loan => <article key={loan.id} className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"><div className="p-3"><div className="flex items-start"><div className="min-w-0 flex-1"><h2 className="font-medium text-[#525252]">{loan.name}</h2><p className="mt-1 text-xs text-[#737373]">{loan.id} · {loan.amount}</p><p className="mt-1 text-xs text-[#737373]">Submitted {loan.submitted}</p></div><StatusBadge status={loan.status} /></div></div><div className="flex gap-4 border-t border-[#e5e5e5] px-4 py-3 text-sm font-semibold text-[#be123c]"><button onClick={() => onView(loan)}>View</button><button disabled={loan.hasCoMaker} onClick={() => onCoMaker(loan)} className="disabled:text-[#f09aac]">{loan.hasCoMaker ? "Co-maker added" : "Add co-maker"}</button></div></article>)}
+          {filtered.map(loan => <article key={loan.id} className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"><div className="p-3"><div className="flex items-start"><div className="min-w-0 flex-1"><h2 className="font-medium text-[#525252]">{loan.name}</h2><p className="mt-1 text-xs text-[#737373]">{loan.id} · {loan.amount}</p><p className="mt-1 text-xs text-[#737373]">Submitted {loan.submitted}</p></div><StatusBadge status={loan.status} /></div></div><div className="flex gap-4 border-t border-[#e5e5e5] px-4 py-3 text-sm font-semibold text-[#be123c]"><button onClick={() => onView(loan)}>View</button><button disabled={coMakerLoadingLoanId === loan.id} onClick={() => onCoMaker(loan)} className="disabled:cursor-wait disabled:opacity-60">{coMakerLoadingLoanId === loan.id ? "Loading…" : loan.coMaker ? "Co-maker" : "Add"}</button></div></article>)}
         </div>
       </div>
     </main>
@@ -479,6 +480,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
   const [businesses, setBusinesses] = useState<Record<string, string>[]>([{}, {}]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [pendingForm, setPendingForm] = useState<ApplicationFormData>();
   const updateValue = (label: string, value: string) => setValues(current => ({ ...current, [label]: value, ...(label === "Date of birth" ? { Age: calculateAge(value) } : {}) }));
   const changeChildrenCount = (value: string) => {
     const count = Math.min(20, Math.max(0, Math.floor(numericValue(value))));
@@ -490,7 +492,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
   const sectionTitle = (title: string) => <h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase leading-5 text-[#404040]">{title}</h2>;
   const field = (label: string, className = "") => <div className={className}><FormField label={label} value={values[label] ?? ""} readOnly={label === "Age"} textarea={label === "Overall remarks"} onValueChange={value => updateValue(label, value)} /></div>;
   return (
-    <form onSubmit={async (event) => {
+    <form onSubmit={(event) => {
       event.preventDefault();
       if (pending) return;
       const submittedForm = new FormData(event.currentTarget);
@@ -498,11 +500,10 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
         ...values,
         "Present address": String(submittedForm.get("presentAddress") ?? ""),
       };
-      setPending(true);
       setError("");
       const personalFields = ["Full name", "Date of birth", "Civil status", "Citizenship", "Gender", "Place of birth", "Contact number", "Email / Facebook address", "Relationship to borrower"];
       const addressFields = ["Home address", "Home barangay", "Home city/town", "Home ZIP code", "Home region", "Provincial address", "Provincial barangay", "Provincial city/town", "Provincial ZIP code", "Provincial region", "Present address"];
-      const message = await onSave({
+      setPendingForm({
         "co-personal": Object.fromEntries(personalFields.map(label => [label, submittedValues[label] ?? ""])),
         "co-address": Object.fromEntries(addressFields.map(label => [label, submittedValues[label] ?? ""])),
         "co-household": { "Number of children": childrenCount },
@@ -511,8 +512,6 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
         __children: encodedRows(children),
         __businesses: encodedRows(businesses),
       });
-      setPending(false);
-      if (message) setError(message);
     }} className="hidden px-8 pb-8 pt-8 lg:block">
       <div className="mx-auto max-w-[1096px] rounded-xl border border-[#e5e5e5] bg-white px-6 pt-6">
         <section>
@@ -562,10 +561,26 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
         <div className="sticky bottom-0 -mx-6 mt-8 flex items-center justify-end gap-3 border-t border-[#e5e5e5] bg-white px-6 py-4">
           {error && <p role="alert" className="mr-auto text-sm text-red-700">{error}</p>}
           <button type="button" onClick={onCancel} className={secondaryButton}>Cancel</button>
-          <button type="button" className={secondaryButton}>Save draft</button>
           <button disabled={pending} type="submit" className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Saving…" : "Save co-borrower"}</button>
         </div>
       </div>
+      {pendingForm && <SubmitConfirmationModal
+        title="Add this co-maker?"
+        description={`This will add the co-maker to ${loan.id} — ${loan.name}. The saved co-maker details will be read-only. This cannot be undone.`}
+        confirmLabel="Add co-maker"
+        pending={pending}
+        onCancel={() => setPendingForm(undefined)}
+        onConfirm={async () => {
+          if (pending) return;
+          setPending(true);
+          const message = await onSave(pendingForm);
+          setPending(false);
+          if (message) {
+            setError(message);
+            setPendingForm(undefined);
+          }
+        }}
+      />}
     </form>
   );
 }
@@ -578,13 +593,14 @@ function PaymentSchedule({ loanValues, onBack, onDone }: { loanValues: Record<st
 }
 
 function Review({ values, error, pending, onBack, onSubmit }: { values: FormDataState; error?: string; pending: boolean; onBack: () => void; onSubmit: () => void }) {
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const personal = values.personal ?? {};
   const business = values.business ?? {};
   const household = values.household ?? {};
   const loan = values.loan ?? {};
   const name = [personal["Last name"], [personal["First name"], personal["Middle name"]].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "Not provided";
   const sections = [{ title: "Personal information", rows: [["Name", name], ["Date of birth", personal["Date of birth"] || "Not provided"], ["Contact", personal["Contact number"] || "Not provided"]] }, { title: "Business & household", rows: [["Gross monthly", business["Gross monthly income"] || "Not provided"], ["Spouse income", household["Monthly income/salary"] || "Not provided"]] }, { title: "Loan details", rows: [["Product", loan["Loan product"] || "Not provided"], ["Amount", loan["Loan amount"] || "Not provided"], ["Term", loan.Term || "Not provided"]] }];
-  return <PageShell title="Review & submit" back={onBack}><div className="mx-auto max-w-3xl px-4 pb-28 pt-6 lg:px-8"><p className="text-sm leading-6 text-[#525252]">Check the details with your client before submitting. You can’t edit after submission.</p>{sections.map(section => <section key={section.title} className="mt-5"><h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase text-[#525252]">{section.title}</h2><dl className="mt-2">{section.rows.map(([label,value]) => <div key={label} className="flex py-2 text-sm"><dt className="text-[#737373]">{label}</dt><dd className="ml-auto font-medium">{value}</dd></div>)}</dl><button type="button" onClick={onBack} className="text-sm font-semibold text-[#be123c]">Edit</button></section>)}{error && <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}<button disabled={pending} onClick={onSubmit} className={`${primaryButton} mt-7 w-full disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Submitting…" : "Forward application"}</button></div></PageShell>;
+  return <PageShell title="Review & submit" back={onBack}><div className="mx-auto max-w-3xl px-4 pb-28 pt-6 lg:px-8"><p className="text-sm leading-6 text-[#525252]">Check the details with your client before submitting. You can’t edit after submission.</p>{sections.map(section => <section key={section.title} className="mt-5"><h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase text-[#525252]">{section.title}</h2><dl className="mt-2">{section.rows.map(([label,value]) => <div key={label} className="flex py-2 text-sm"><dt className="text-[#737373]">{label}</dt><dd className="ml-auto font-medium">{value}</dd></div>)}</dl><button type="button" onClick={onBack} className="text-sm font-semibold text-[#be123c]">Edit</button></section>)}{error && <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}<button disabled={pending} onClick={() => setShowConfirmation(true)} className={`${primaryButton} mt-7 w-full disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Submitting…" : "Forward application"}</button></div>{showConfirmation && <SubmitConfirmationModal title="Submit this application?" description="This will forward the loan application for processing. Review all borrower and loan details before continuing. This cannot be undone." confirmLabel="Submit application" pending={pending} onCancel={() => setShowConfirmation(false)} onConfirm={() => { setShowConfirmation(false); onSubmit(); }} />}</PageShell>;
 }
 
 function ReadOnlyField({ label, value, className = "" }: { label: string; value: string; className?: string }) {
@@ -601,6 +617,91 @@ function ReadOnlyTable({ columns, rows, empty }: { columns: string[]; rows: Reco
 
 function ReadOnlyDocuments({ files }: { files: { name: string; size: string }[] }) {
   return files.length ? <div className="grid gap-3">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex min-h-[72px] items-center rounded-xl border border-[#e5e5e5] px-4"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} /><div className="ml-3"><p className="text-sm font-medium text-[#404040]">{file.name}</p><p className="text-sm text-[#737373]">{file.size} · Uploaded with application</p></div></div>)}</div> : <p className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#737373]">No supporting documents were attached.</p>;
+}
+
+function CoMakerDetailsView({ loan, onBack }: { loan: Submission; onBack: () => void }) {
+  const coMaker = loan.coMaker;
+  if (!coMaker) return null;
+
+  const display = (value?: string) => value || "Not provided";
+  return (
+    <PageShell
+      title="Co-maker details"
+      desktopTitle="Co-maker details"
+      supportingText="Review the co-maker attached to this loan application."
+      back={onBack}
+    >
+      <main className="mx-auto w-full max-w-[1096px] px-4 pb-12 pt-6 lg:px-8 lg:pt-0">
+        <div className="rounded-xl border border-[#e5e5e5] bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] lg:p-6">
+          <div className="space-y-8">
+            <ReadOnlySection title="Loan reference">
+              <div className="grid gap-4 sm:grid-cols-2 lg:gap-6">
+                <ReadOnlyField label="Borrower / principal loan client" value={loan.name} />
+                <ReadOnlyField label="Loan ID" value={loan.id} />
+                <ReadOnlyField label="Loan amount" value={loan.amount} />
+                <ReadOnlyField label="Term" value={loan.term} />
+              </div>
+            </ReadOnlySection>
+
+            <ReadOnlySection title="Co-maker personal information">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+                <ReadOnlyField label="Full name" value={coMaker.fullName} className="sm:col-span-2 lg:col-span-3" />
+                <ReadOnlyField label="Age" value={coMaker.dateOfBirth ? calculateAge(coMaker.dateOfBirth) : "Not provided"} />
+                <ReadOnlyField label="Civil status" value={display(coMaker.civilStatus)} />
+                <ReadOnlyField label="Date of birth" value={display(coMaker.dateOfBirth)} />
+                <ReadOnlyField label="Citizenship" value={display(coMaker.citizenship)} />
+                <ReadOnlyField label="Gender" value={display(coMaker.gender)} />
+                <ReadOnlyField label="Place of birth" value={display(coMaker.placeOfBirth)} />
+                <ReadOnlyField label="Contact number" value={display(coMaker.contactNumber)} />
+                <ReadOnlyField label="Email / Facebook address" value={display(coMaker.email)} />
+                <ReadOnlyField label="Relationship to borrower" value={display(coMaker.relationshipToBorrower)} />
+              </div>
+            </ReadOnlySection>
+
+            <ReadOnlySection title="Address information">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+                <ReadOnlyField label="Home address" value={coMaker.homeAddress} className="sm:col-span-2 lg:col-span-4" />
+                <ReadOnlyField label="Barangay" value={coMaker.barangay} />
+                <ReadOnlyField label="City / Town" value={coMaker.cityTown} />
+                <ReadOnlyField label="ZIP code" value={coMaker.zipCode} />
+                <ReadOnlyField label="Region" value={coMaker.region} />
+                <ReadOnlyField label="Present address status" value={display(coMaker.presentAddressStatus)} className="sm:col-span-2" />
+                <ReadOnlyField label="Present address" value={display(coMaker.presentAddress)} className="sm:col-span-2" />
+                <ReadOnlyField label="Provincial address" value={display(coMaker.provincialAddress)} className="sm:col-span-2 lg:col-span-4" />
+                <ReadOnlyField label="Provincial barangay" value={display(coMaker.provincialBarangay)} />
+                <ReadOnlyField label="Provincial city / town" value={display(coMaker.provincialCityTown)} />
+                <ReadOnlyField label="Provincial ZIP code" value={display(coMaker.provincialZipCode)} />
+                <ReadOnlyField label="Provincial region" value={display(coMaker.provincialRegion)} />
+              </div>
+            </ReadOnlySection>
+
+            <ReadOnlySection title="Household information">
+              <ReadOnlyField label="Number of children" value={display(coMaker.numberOfChildren)} className="max-w-[512px]" />
+              <div className="mt-6">
+                <p className="mb-3 text-xs font-semibold uppercase text-[#404040]">Children</p>
+                <ReadOnlyTable columns={["Name", "School", "Grade/Course", "Birthday", "Age"]} rows={coMaker.children} empty="No children were added for this co-maker." />
+              </div>
+            </ReadOnlySection>
+
+            <ReadOnlySection title="Business information">
+              <ReadOnlyTable columns={["Business name", "Type", "Address", "Years"]} rows={coMaker.businesses} empty="No businesses were added for this co-maker." />
+              <ReadOnlyField label="Gross monthly income" value={display(coMaker.grossMonthlyIncome)} className="mt-6 max-w-[512px]" />
+            </ReadOnlySection>
+
+            <ReadOnlySection title="Overall remarks">
+              <p className="min-h-24 rounded-lg border border-[#d4d4d4] bg-[#fafafa] px-3 py-3 text-sm leading-6 text-[#525252] shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+                {display(coMaker.overallRemarks)}
+              </p>
+            </ReadOnlySection>
+          </div>
+
+          <div className="-mx-4 -mb-4 mt-8 flex border-t border-[#e5e5e5] px-4 py-4 lg:-mx-6 lg:-mb-6 lg:justify-end lg:px-6">
+            <button onClick={onBack} className={`${secondaryButton} w-full lg:w-auto`}>Back</button>
+          </div>
+        </div>
+      </main>
+    </PageShell>
+  );
 }
 
 function DesktopSubmissionView({ loan, onBack }: { loan: Submission; onBack: () => void }) {
@@ -642,7 +743,7 @@ function DesktopSubmissionView({ loan, onBack }: { loan: Submission; onBack: () 
   </main>;
 }
 
-function SubmissionView({ loan, onBack, onCoMaker }: { loan: Submission; onBack: () => void; onCoMaker: () => void }) {
+function SubmissionView({ loan, coMakerPending, onBack, onCoMaker }: { loan: Submission; coMakerPending: boolean; onBack: () => void; onCoMaker: () => void }) {
   const [expanded, setExpanded] = useState("personal");
   const [showMobilePayments, setShowMobilePayments] = useState(false);
   const details = loan.details;
@@ -673,13 +774,31 @@ function SubmissionView({ loan, onBack, onCoMaker }: { loan: Submission; onBack:
           </div>
         </section>)}
       </div>
-      <button onClick={onCoMaker} disabled={loan.hasCoMaker} className={`${secondaryButton} mt-6 w-full disabled:text-[#a3a3a3]`}>{loan.hasCoMaker ? "Co-maker already added" : "Add co-maker"}</button>
+      <button disabled={coMakerPending} onClick={onCoMaker} className={`${secondaryButton} mt-6 w-full disabled:cursor-wait disabled:opacity-60`}>{coMakerPending ? "Loading co-maker…" : loan.coMaker ? "View co-maker" : "Add co-maker"}</button>
     </div>
   </PageShell></div></>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div className="mb-1 flex items-center"><h2 className="text-lg font-semibold">{title}</h2><button onClick={onClose} className="ml-auto text-2xl text-[#a3a3a3]">×</button></div>{children}</div></div>;
+}
+
+function SubmitConfirmationModal({ title, description, confirmLabel, pending = false, onCancel, onConfirm }: { title: string; description: string; confirmLabel: string; pending?: boolean; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
+  return <div role="dialog" aria-modal="true" aria-labelledby="submit-confirmation-title" aria-describedby="submit-confirmation-description" className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-8">
+    <button type="button" aria-label="Close confirmation dialog" disabled={pending} onClick={onCancel} className="absolute inset-0 cursor-default bg-[#0a0a0a]/70 backdrop-blur-[2px] disabled:cursor-wait" />
+    <div className="relative w-full max-w-[420px] rounded-xl bg-white px-5 pb-5 pt-4 shadow-2xl lg:px-6 lg:pb-6 lg:pt-5">
+      <div aria-hidden className="flex size-7 items-center justify-center rounded-md border border-[#e5e5e5] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+        <span className="flex size-3.5 items-center justify-center rounded-full border border-[#f59e0b] text-[10px] font-bold leading-none text-[#d97706]">!</span>
+      </div>
+      <button type="button" aria-label="Close" disabled={pending} onClick={onCancel} className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50 lg:right-4 lg:top-4"><Image src="/credit-analyst/icons/x-close.svg" alt="" width={18} height={18} /></button>
+      <h2 id="submit-confirmation-title" className="mt-3 pr-10 text-base font-semibold leading-6 text-[#171717]">{title}</h2>
+      <p id="submit-confirmation-description" className="mt-1 text-sm leading-5 text-[#525252]">{description}</p>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <button type="button" disabled={pending} onClick={onCancel} className="h-10 rounded-lg border border-[#d4d4d4] bg-white text-sm font-semibold text-[#404040] shadow-[0_1px_2px_rgba(0,0,0,0.05)] disabled:opacity-50">Cancel</button>
+        <button type="button" disabled={pending} onClick={() => void onConfirm()} className="h-10 rounded-lg bg-[#e11d48] px-3 text-sm font-semibold text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.18),inset_0_-2px_0_rgba(0,0,0,0.05)] hover:bg-[#be123c] disabled:cursor-wait disabled:opacity-60">{pending ? "Submitting…" : confirmLabel}</button>
+      </div>
+    </div>
+  </div>;
 }
 
 export default function CreditAnalystApp({ userProfile, initialSubmissions, loadError }: { userProfile: UserProfileIdentity; initialSubmissions: Submission[]; loadError?: string }) {
@@ -703,6 +822,32 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   const [submitting, setSubmitting] = useState(false);
   const [coMakerError, setCoMakerError] = useState("");
   const [coMakerSubmitting, setCoMakerSubmitting] = useState(false);
+  const [coMakerLoadingLoanId, setCoMakerLoadingLoanId] = useState<string>();
+  const [coMakerLoadError, setCoMakerLoadError] = useState("");
+  const [showMobileCoMakerConfirmation, setShowMobileCoMakerConfirmation] = useState(false);
+  useEffect(() => {
+    const loanIds = initialSubmissions.flatMap(loan =>
+      loan.databaseId ? [loan.databaseId] : [],
+    );
+    if (!loanIds.length) return;
+
+    let active = true;
+    void getLoanCoMakers(loanIds).then(result => {
+      if (!active) return;
+      if (!result.ok) {
+        setCoMakerLoadError(result.error);
+        return;
+      }
+
+      setSubmissions(current => current.map(loan => {
+        if (!loan.databaseId) return loan;
+        const coMaker = result.coMakers[loan.databaseId];
+        return { ...loan, hasCoMaker: Boolean(coMaker), coMaker };
+      }));
+    });
+
+    return () => { active = false; };
+  }, [initialSubmissions]);
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(applicationDraftKey);
@@ -717,7 +862,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   }, []);
   const addToSet = (setter: (value: Set<string>) => void, current: Set<string>, id: string) => setter(new Set(current).add(id));
   const updateSectionData = (setter: (updater: (current: FormDataState) => FormDataState) => void, sectionId: string, field: string, value: string) => setter(current => ({ ...current, [sectionId]: { ...current[sectionId], [field]: value } }));
-  const active = screen.type === "dashboard" || screen.type === "submission" ? "submissions" : "application";
+  const active = screen.type === "dashboard" || screen.type === "submission" || screen.type === "co-maker-view" ? "submissions" : "application";
   const navigate = (target: "submissions" | "application") => { setScreen(target === "submissions" ? { type: "dashboard" } : { type: "application" }); setMenuOpen(false); };
   const resetApplication = () => {
     setApplicationFormData({});
@@ -741,6 +886,43 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     setCoBorrowerBusinesses([]);
     setCoMakerError("");
     setScreen({ type: "co-maker", loan });
+  };
+  const openCoMaker = (
+    loan: Submission,
+    returnTo: "dashboard" | "submission",
+  ) => {
+    if (coMakerLoadingLoanId) return;
+    if (!loan.databaseId) {
+      if (loan.coMaker) setScreen({ type: "co-maker-view", loan, returnTo });
+      else startCoMaker(loan);
+      return;
+    }
+
+    setCoMakerLoadingLoanId(loan.id);
+    setCoMakerLoadError("");
+    void getLoanCoMaker(loan.databaseId).then(result => {
+      if (!result.ok) {
+        setCoMakerLoadError(result.error);
+        return;
+      }
+
+      const freshLoan = {
+        ...loan,
+        hasCoMaker: Boolean(result.coMaker),
+        coMaker: result.coMaker,
+      };
+      setSubmissions(current => current.map(item =>
+        item.databaseId === loan.databaseId ? freshLoan : item,
+      ));
+
+      if (result.coMaker) {
+        setScreen({ type: "co-maker-view", loan: freshLoan, returnTo });
+      } else {
+        startCoMaker(freshLoan);
+      }
+    }).catch(() => {
+      setCoMakerLoadError("The co-maker details could not be loaded. Please try again.");
+    }).finally(() => setCoMakerLoadingLoanId(undefined));
   };
   const persistDraft = (desktopDraft?: DesktopDraftData) => {
     const nextDraft: ApplicationDraft = {
@@ -834,7 +1016,11 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
       return result.error;
     }
 
-    const savedLoan = { ...loan, hasCoMaker: true };
+    const savedLoan = {
+      ...loan,
+      hasCoMaker: true,
+      coMaker: result.coMaker,
+    };
     setSubmissions(current =>
       current.map(item => item.databaseId === loan.databaseId ? savedLoan : item),
     );
@@ -865,7 +1051,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     updatedAt: draft?.updatedAt ?? "",
   };
   let content: ReactNode;
-  if (screen.type === "dashboard") content = <Dashboard submissions={submissions} loadError={loadError} draft={draft} onNew={startNewApplication} onResumeDraft={resumeDraft} onDiscardDraft={discardDraft} onView={loan => setScreen({ type: "submission", loan })} onCoMaker={startCoMaker} />;
+  if (screen.type === "dashboard") content = <Dashboard submissions={submissions} loadError={loadError} coMakerLoadingLoanId={coMakerLoadingLoanId} draft={draft} onNew={startNewApplication} onResumeDraft={resumeDraft} onDiscardDraft={discardDraft} onView={loan => setScreen({ type: "submission", loan })} onCoMaker={loan => openCoMaker(loan, "dashboard")} />;
   else if (screen.type === "application") content = (
     <PageShell title={[applicationFormData.personal?.["First name"], applicationFormData.personal?.["Last name"]].filter(Boolean).join(" ") || "New application"} desktopTitle="New loan application" supportingText="Fill in the client's details and submit for review." back={() => setScreen({ type: "dashboard" })} action={<button onClick={discardDraft} className="text-sm font-semibold text-[#be123c]">Discard</button>}>
       <div className="lg:hidden">
@@ -879,10 +1065,11 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   else if (screen.type === "child") content = <ChildForm values={childData} onFieldChange={(field, value) => setChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "section", sectionId: "personal" })} onDone={() => { setChildAdded(true); setScreen({ type: "section", sectionId: "personal" }); }} />;
   else if (screen.type === "business") { const businessIndex = screen.businessIndex; content = <BusinessForm number={(businessIndex ?? businesses.length) + 1} values={businessIndex === undefined ? {} : businesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "section", sectionId: "business" })} onRemove={() => { if (businessIndex !== undefined) setBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "section", sectionId: "business" }); }} onSave={business => { setBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedApplicationSections, startedApplicationSections, "business"); setScreen({ type: "section", sectionId: "business" }); }} />; }
   else if (screen.type === "review") content = <Review values={applicationFormData} error={submitError} pending={submitting} onBack={() => setScreen({ type: "application" })} onSubmit={submitApplication} />;
-  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setScreen({ type: "dashboard" })} action={<button onClick={() => setScreen({ type: "dashboard" })} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} error={coMakerError} pending={coMakerSubmitting} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => submitCoMaker(screen.loan, { ...coMakerFormData, __children: encodedRows(Object.keys(coMakerChildData).length ? [coMakerChildData] : []), __businesses: encodedRows(coBorrowerBusinesses) })} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={form => submitCoMaker(screen.loan, form)} /></PageShell>;
+  else if (screen.type === "co-maker-view") content = <CoMakerDetailsView loan={screen.loan} onBack={() => setScreen(screen.returnTo === "submission" ? { type: "submission", loan: screen.loan } : { type: "dashboard" })} />;
+  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setScreen({ type: "dashboard" })} action={<button onClick={() => setScreen({ type: "dashboard" })} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} error={coMakerError} pending={coMakerSubmitting} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => setShowMobileCoMakerConfirmation(true)} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={form => submitCoMaker(screen.loan, form)} />{showMobileCoMakerConfirmation && <SubmitConfirmationModal title="Add this co-maker?" description={`This will add the co-maker to ${screen.loan.id} — ${screen.loan.name}. The saved co-maker details will be read-only. This cannot be undone.`} confirmLabel="Add co-maker" pending={coMakerSubmitting} onCancel={() => setShowMobileCoMakerConfirmation(false)} onConfirm={() => { setShowMobileCoMakerConfirmation(false); void submitCoMaker(screen.loan, { ...coMakerFormData, __children: encodedRows(Object.keys(coMakerChildData).length ? [coMakerChildData] : []), __businesses: encodedRows(coBorrowerBusinesses) }); }} />}</PageShell>;
   else if (screen.type === "co-section") content = <SectionForm section={coMakerSections.find(item => item.id === screen.sectionId)!} values={coMakerFormData[screen.sectionId] ?? {}} businesses={coBorrowerBusinesses} onFieldChange={(field, value) => { updateSectionData(setCoMakerFormData, screen.sectionId, field, value); addToSet(setStartedCoMakerSections, startedCoMakerSections, screen.sectionId); }} onBack={() => setScreen({ type: "co-maker", loan: screen.loan })} onDone={() => { addToSet(setCompletedCoMakerSections, completedCoMakerSections, screen.sectionId); setScreen({ type: "co-maker", loan: screen.loan }); }} onChild={() => setScreen({ type: "co-child", loan: screen.loan })} onBusiness={businessIndex => setScreen({ type: "co-business-entry", businessIndex, loan: screen.loan })} />;
   else if (screen.type === "co-child") content = <ChildForm values={coMakerChildData} onFieldChange={(field, value) => setCoMakerChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} onDone={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} />;
   else if (screen.type === "co-business-entry") { const businessIndex = screen.businessIndex; const loan = screen.loan; content = <BusinessForm number={(businessIndex ?? coBorrowerBusinesses.length) + 1} values={businessIndex === undefined ? {} : coBorrowerBusinesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "co-section", sectionId: "co-business", loan })} onRemove={() => { if (businessIndex !== undefined) setCoBorrowerBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} onSave={business => { setCoBorrowerBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedCoMakerSections, startedCoMakerSections, "co-business"); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} />; }
-  else content = <SubmissionView loan={screen.loan} onBack={() => setScreen({ type: "dashboard" })} onCoMaker={() => startCoMaker(screen.loan)} />;
-  return <div className="min-h-screen bg-white text-[#171717]"><DesktopNavigation {...navProps} /><MobileHeader onOpen={() => setMenuOpen(true)} /><MobileNavigation {...navProps} /><div className="lg:pl-[280px]">{content}</div></div>;
+  else content = <SubmissionView loan={screen.loan} coMakerPending={coMakerLoadingLoanId === screen.loan.id} onBack={() => setScreen({ type: "dashboard" })} onCoMaker={() => openCoMaker(screen.loan, "submission")} />;
+  return <div className="min-h-screen bg-white text-[#171717]"><DesktopNavigation {...navProps} /><MobileHeader onOpen={() => setMenuOpen(true)} /><MobileNavigation {...navProps} /><div className="lg:pl-[280px]">{coMakerLoadError && <div role="alert" className="mx-4 mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 lg:mx-8"><span className="flex-1">{coMakerLoadError}</span><button type="button" onClick={() => setCoMakerLoadError("")} className="font-semibold">Dismiss</button></div>}{content}</div></div>;
 }

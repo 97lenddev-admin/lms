@@ -1,4 +1,4 @@
-import type { Submission, SubmissionStatus } from "./data";
+import type { CoMakerDetails, Submission, SubmissionStatus } from "./data";
 
 export type LoanRow = {
   id: string;
@@ -33,7 +33,7 @@ export type LoanRow = {
   real_and_personal_properties: string | null;
   health_declaration: string | null;
   supporting_documents: unknown;
-  loan_product: string;
+  loan_product: string | null;
   loan_amount: number | string;
   term: number;
   status: string;
@@ -58,8 +58,11 @@ function normalizeStatus(status: string): SubmissionStatus {
     : "Pending";
 }
 
-function formatLoanProduct(product: string) {
-  return product
+function formatLoanProduct(product: string | null) {
+  const normalizedProduct = product?.trim();
+  if (!normalizedProduct) return undefined;
+
+  return normalizedProduct
     .split("-")
     .map(word => `${word.slice(0, 1).toUpperCase()}${word.slice(1).toLowerCase()}`)
     .join("-");
@@ -91,7 +94,10 @@ function documentDetails(value: unknown) {
   };
 }
 
-export function loanRowToSubmission(row: LoanRow, hasCoMaker = false): Submission {
+export function loanRowToSubmission(
+  row: LoanRow,
+  coMaker?: CoMakerDetails,
+): Submission {
   const middleName = row.middle_name?.trim();
   const givenNames = [row.first_name, middleName].filter(Boolean).join(" ");
   const documents = documentDetails(row.supporting_documents);
@@ -122,7 +128,8 @@ export function loanRowToSubmission(row: LoanRow, hasCoMaker = false): Submissio
       year: "numeric",
     }).format(new Date(row.created_at)),
     status: normalizeStatus(row.status),
-    hasCoMaker,
+    hasCoMaker: Boolean(coMaker),
+    coMaker,
     details: {
       firstName: row.first_name,
       middleName: middleName || undefined,

@@ -5,6 +5,35 @@ export type SubmissionStatus =
   | "Rejected"
   | "Inactive";
 
+export type CoMakerDetails = {
+  fullName: string;
+  dateOfBirth?: string;
+  civilStatus?: string;
+  citizenship?: string;
+  gender?: string;
+  placeOfBirth?: string;
+  contactNumber?: string;
+  email?: string;
+  relationshipToBorrower?: string;
+  homeAddress: string;
+  presentAddress?: string;
+  presentAddressStatus?: string;
+  barangay: string;
+  cityTown: string;
+  zipCode: string;
+  region: string;
+  provincialAddress?: string;
+  provincialBarangay?: string;
+  provincialCityTown?: string;
+  provincialZipCode?: string;
+  provincialRegion?: string;
+  numberOfChildren?: string;
+  children: Record<string, string>[];
+  businesses: Record<string, string>[];
+  grossMonthlyIncome?: string;
+  overallRemarks?: string;
+};
+
 export type Submission = {
   databaseId?: string;
   id: string;
@@ -15,6 +44,7 @@ export type Submission = {
   submitted: string;
   status: SubmissionStatus;
   hasCoMaker?: boolean;
+  coMaker?: CoMakerDetails;
   details?: {
     firstName: string;
     middleName?: string;

@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireUserRole } from "@/lib/supabase/require-user";
 import { loanColumns, loanRowToSubmission, type LoanRow } from "./loans";
-import type { Submission } from "./data";
+import type { CoMakerDetails, Submission } from "./data";
+import {
+  coMakerColumns,
+  coMakerRowToDetails,
+  type LoanCoMakerRow,
+} from "./co-makers";
 
 export type ApplicationFormData = Record<string, Record<string, string>>;
 
@@ -12,7 +17,15 @@ export type CreateLoanResult =
   | { ok: false; error: string };
 
 export type CreateCoMakerResult =
-  | { ok: true }
+  | { ok: true; coMaker: CoMakerDetails }
+  | { ok: false; error: string };
+
+export type GetCoMakerResult =
+  | { ok: true; coMaker?: CoMakerDetails }
+  | { ok: false; error: string };
+
+export type GetCoMakersResult =
+  | { ok: true; coMakers: Record<string, CoMakerDetails> }
   | { ok: false; error: string };
 
 function cleanText(value: string | undefined) {
@@ -56,6 +69,59 @@ function recordRows(section: Record<string, string> | undefined) {
       return [];
     }
   });
+}
+
+export async function getLoanCoMaker(
+  loanId: string,
+): Promise<GetCoMakerResult> {
+  const { supabase } = await requireUserRole("Credit Analyst");
+  if (!loanId) {
+    return { ok: false, error: "This loan is not linked to a database record." };
+  }
+
+  const { data, error } = await supabase
+    .from("loan_co_makers")
+    .select(coMakerColumns)
+    .eq("loan_id", loanId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Unable to load loan co-maker", error);
+    return { ok: false, error: "The co-maker details could not be loaded. Please try again." };
+  }
+
+  return {
+    ok: true,
+    coMaker: data ? coMakerRowToDetails(data as LoanCoMakerRow) : undefined,
+  };
+}
+
+export async function getLoanCoMakers(
+  loanIds: string[],
+): Promise<GetCoMakersResult> {
+  const { supabase } = await requireUserRole("Credit Analyst");
+  const uniqueLoanIds = [...new Set(loanIds.filter(Boolean))];
+  if (!uniqueLoanIds.length) return { ok: true, coMakers: {} };
+
+  const { data, error } = await supabase
+    .from("loan_co_makers")
+    .select(coMakerColumns)
+    .in("loan_id", uniqueLoanIds);
+
+  if (error) {
+    console.error("Unable to refresh loan co-makers", error);
+    return { ok: false, error: "The co-maker details could not be refreshed. Please reload the page." };
+  }
+
+  return {
+    ok: true,
+    coMakers: Object.fromEntries(
+      ((data ?? []) as LoanCoMakerRow[]).map(row => [
+        row.loan_id,
+        coMakerRowToDetails(row),
+      ]),
+    ),
+  };
 }
 
 export async function createLoanApplication(
@@ -169,6 +235,12 @@ export async function createLoanApplication(
     if (error.code === "22P02") {
       return { ok: false, error: "A numeric field contains invalid text. Please enter numbers only and try again." };
     }
+    if (error.code === "42501") {
+      return {
+        ok: false,
+        error: "The loan database access policy is incomplete. Ask an administrator to apply the Credit Analyst read and submission policies.",
+      };
+    }
     return { ok: false, error: "The application could not be submitted. Please try again." };
   }
 
@@ -252,20 +324,24 @@ export async function createLoanCoMaker(
     overall_remarks: cleanText(remarks["Overall remarks"]),
   };
 
-  const { error } = await supabase.from("loan_co_makers").insert({
-    loan_id: loanId,
-    full_name: fullName,
-    home_address: homeAddress,
-    present_address: homeAddress,
-    present_address_status: presentAddressStatus,
-    barangay,
-    city_town: cityTown,
-    zip_code: zipCode,
-    region,
-    ...Object.fromEntries(
-      Object.entries(optionalFields).filter(([, value]) => value !== undefined),
-    ),
-  });
+  const { data, error } = await supabase
+    .from("loan_co_makers")
+    .insert({
+      loan_id: loanId,
+      full_name: fullName,
+      home_address: homeAddress,
+      present_address: homeAddress,
+      present_address_status: presentAddressStatus,
+      barangay,
+      city_town: cityTown,
+      zip_code: zipCode,
+      region,
+      ...Object.fromEntries(
+        Object.entries(optionalFields).filter(([, value]) => value !== undefined),
+      ),
+    })
+    .select(coMakerColumns)
+    .single();
 
   if (error) {
     console.error("Unable to create loan co-maker", error);
@@ -288,5 +364,8 @@ export async function createLoanCoMaker(
   }
 
   revalidatePath("/credit-analyst");
-  return { ok: true };
+  return {
+    ok: true,
+    coMaker: coMakerRowToDetails(data as LoanCoMakerRow),
+  };
 }
