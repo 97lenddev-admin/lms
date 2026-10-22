@@ -209,26 +209,36 @@ export async function saveVoluntarySurrender(
     return { success: false, error: `Unable to upload the signed attestation: ${uploadError.message}` };
   }
 
-  const { error: surrenderError } = await supabase.rpc("voluntary_surrender", {
-    p_investigation_id: investigationId,
-    p_surrendered_items: surrenderedItems,
-    p_signed_attestation_image: {
-      storage_key: `loan-attestations/${objectPath}`,
-      original_name: image.name,
-    },
-  });
+  const { data: savedInvestigation, error: surrenderError } = await supabase
+    .from("loan_credit_investigations")
+    .update({
+      surrendered_items: surrenderedItems,
+      signed_attestation_image: {
+        storage_key: `loan-attestations/${objectPath}`,
+        original_name: image.name,
+      },
+    })
+    .eq("id", investigationId)
+    .eq("credit_investigator_id", user.id)
+    .select("id")
+    .maybeSingle();
 
-  if (surrenderError) {
+  if (surrenderError || !savedInvestigation) {
     const { error: cleanupError } = await supabase.storage
       .from("loan-attestations")
       .remove([objectPath]);
     console.error("[credit-investigator] Unable to save voluntary surrender", {
       investigationId,
-      code: surrenderError.code,
-      message: surrenderError.message,
+      code: surrenderError?.code,
+      message: surrenderError?.message ?? "No investigation row was updated.",
       cleanupError: cleanupError?.message,
     });
-    return { success: false, error: `Unable to save the voluntary surrender: ${surrenderError.message}` };
+    return {
+      success: false,
+      error: surrenderError
+        ? `Unable to save the voluntary surrender: ${surrenderError.message}`
+        : "Unable to save the voluntary surrender because the investigation is no longer accessible.",
+    };
   }
 
   revalidatePath("/credit-investigator");

@@ -31,3 +31,39 @@ test("loan mapping still formats a provided loan product", () => {
 
   assert.equal(submission.product, "Semi-Monthly");
 });
+
+test("loan mapping reads submitted cash flow metadata", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    supporting_documents: [{
+      kind: "application_metadata",
+      cashFlow: { "Gross business sales 1": "45000" },
+    }],
+  });
+
+  assert.equal(submission.details.cashFlow["Gross business sales 1"], "45000");
+});
+
+test("loan mapping prefers direct cash flow columns for both utilities fields", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    gross_business_sales_1: 50000,
+    utilities: 3500,
+    household_rent: 8000,
+    income_utilities: 2100,
+    supporting_documents: [{
+      kind: "application_metadata",
+      cashFlow: {
+        "Gross business sales 1": "45000",
+        "Household utilities": "1800",
+      },
+    }],
+  });
+
+  assert.equal(submission.details.cashFlow["Gross business sales 1"], "50000");
+  assert.equal(submission.details.cashFlow["Business utilities"], "3500");
+  assert.equal(submission.details.cashFlow["Household rent"], "8000");
+  assert.equal(submission.details.cashFlow["Household utilities"], "2100");
+});

@@ -32,6 +32,23 @@ export type LoanRow = {
   nearest_relative_address: string | null;
   real_and_personal_properties: string | null;
   health_declaration: string | null;
+  gross_business_sales_1: number | string | null;
+  gross_business_sales_2: number | string | null;
+  gross_business_sales_3: number | string | null;
+  raw_materials: number | string | null;
+  utilities: number | string | null;
+  business_rent: number | string | null;
+  personnel: number | string | null;
+  taxes: number | string | null;
+  loan_payments: number | string | null;
+  salaries: number | string | null;
+  pensions: number | string | null;
+  remittance: number | string | null;
+  food: number | string | null;
+  household_rent: number | string | null;
+  school: number | string | null;
+  income_utilities: number | string | null;
+  medical: number | string | null;
   supporting_documents: unknown;
   loan_product: string | null;
   loan_amount: number | string;
@@ -41,7 +58,7 @@ export type LoanRow = {
 };
 
 export const loanColumns =
-  "id, loan_id, first_name, middle_name, last_name, date_of_birth, civil_status, citizenship, gender, place_of_birth, permanent_address, permanent_barangay, permanent_city_town, permanent_zipcode, permanent_region, present_address, number_of_children, contact_number, children, businesses, gross_monthly_income, spouse_name, spouse_occupation, spouse_company, spouse_years_employed, spouse_monthly_income, nearest_relative_name, nearest_relative_contact_number, nearest_relative_address, real_and_personal_properties, health_declaration, supporting_documents, loan_product, loan_amount, term, status, created_at";
+  "id, loan_id, first_name, middle_name, last_name, date_of_birth, civil_status, citizenship, gender, place_of_birth, permanent_address, permanent_barangay, permanent_city_town, permanent_zipcode, permanent_region, present_address, number_of_children, contact_number, children, businesses, gross_monthly_income, spouse_name, spouse_occupation, spouse_company, spouse_years_employed, spouse_monthly_income, nearest_relative_name, nearest_relative_contact_number, nearest_relative_address, real_and_personal_properties, health_declaration, gross_business_sales_1, gross_business_sales_2, gross_business_sales_3, raw_materials, utilities, business_rent, personnel, taxes, loan_payments, salaries, pensions, remittance, food, household_rent, school, income_utilities, medical, supporting_documents, loan_product, loan_amount, term, status, created_at";
 
 const statuses: SubmissionStatus[] = [
   "Active",
@@ -74,23 +91,50 @@ function recordRows(value: unknown) {
 }
 
 function documentDetails(value: unknown) {
-  const empty = { files: [] as { name: string; size: string }[], emailFacebookAddress: undefined as string | undefined, spouseAge: undefined as string | undefined, additionalFields: {} as Record<string, string> };
+  const empty = { files: [] as { name: string; size: string }[], emailFacebookAddress: undefined as string | undefined, spouseAge: undefined as string | undefined, cashFlow: {} as Record<string, string>, additionalFields: {} as Record<string, string> };
   if (Array.isArray(value)) {
-    const metadata = value.find(item => item && typeof item === "object" && !Array.isArray(item) && "kind" in item && item.kind === "application_metadata") as { emailFacebookAddress?: unknown; spouseAge?: unknown; additionalFields?: unknown } | undefined;
+    const metadata = value.find(item => item && typeof item === "object" && !Array.isArray(item) && "kind" in item && item.kind === "application_metadata") as { emailFacebookAddress?: unknown; spouseAge?: unknown; cashFlow?: unknown; additionalFields?: unknown } | undefined;
     return {
       files: value.filter((file): file is { name: string; size: string } => Boolean(file) && typeof file === "object" && "name" in file && "size" in file && (!("kind" in file) || file.kind !== "application_metadata")),
       emailFacebookAddress: typeof metadata?.emailFacebookAddress === "string" ? metadata.emailFacebookAddress : undefined,
       spouseAge: typeof metadata?.spouseAge === "string" ? metadata.spouseAge : undefined,
+      cashFlow: metadata?.cashFlow && typeof metadata.cashFlow === "object" && !Array.isArray(metadata.cashFlow) ? metadata.cashFlow as Record<string, string> : {},
       additionalFields: metadata?.additionalFields && typeof metadata.additionalFields === "object" && !Array.isArray(metadata.additionalFields) ? metadata.additionalFields as Record<string, string> : {},
     };
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return empty;
-  const manifest = value as { files?: unknown; emailFacebookAddress?: unknown; spouseAge?: unknown; additionalFields?: unknown };
+  const manifest = value as { files?: unknown; emailFacebookAddress?: unknown; spouseAge?: unknown; cashFlow?: unknown; additionalFields?: unknown };
   return {
     files: Array.isArray(manifest.files) ? manifest.files.filter((file): file is { name: string; size: string } => Boolean(file) && typeof file === "object" && "name" in file && "size" in file) : [],
     emailFacebookAddress: typeof manifest.emailFacebookAddress === "string" ? manifest.emailFacebookAddress : undefined,
     spouseAge: typeof manifest.spouseAge === "string" ? manifest.spouseAge : undefined,
+    cashFlow: manifest.cashFlow && typeof manifest.cashFlow === "object" && !Array.isArray(manifest.cashFlow) ? manifest.cashFlow as Record<string, string> : {},
     additionalFields: manifest.additionalFields && typeof manifest.additionalFields === "object" && !Array.isArray(manifest.additionalFields) ? manifest.additionalFields as Record<string, string> : {},
+  };
+}
+
+function cashFlowDetails(row: LoanRow, fallback: Record<string, string>) {
+  const text = (value: number | string | null, fallbackValue = "") =>
+    value == null ? fallbackValue : String(value);
+
+  return {
+    "Gross business sales 1": text(row.gross_business_sales_1, fallback["Gross business sales 1"]),
+    "Gross business sales 2": text(row.gross_business_sales_2, fallback["Gross business sales 2"]),
+    "Gross business sales 3": text(row.gross_business_sales_3, fallback["Gross business sales 3"]),
+    "Raw materials": text(row.raw_materials, fallback["Raw materials"]),
+    "Business utilities": text(row.utilities, fallback["Business utilities"]),
+    "Business rent": text(row.business_rent, fallback["Business rent"]),
+    Personnel: text(row.personnel, fallback.Personnel),
+    Taxes: text(row.taxes, fallback.Taxes),
+    "Loan payments": text(row.loan_payments, fallback["Loan payments"]),
+    Salaries: text(row.salaries, fallback.Salaries),
+    Pensions: text(row.pensions, fallback.Pensions),
+    Remittance: text(row.remittance, fallback.Remittance),
+    Food: text(row.food, fallback.Food),
+    "Household rent": text(row.household_rent, fallback["Household rent"]),
+    School: text(row.school, fallback.School),
+    "Household utilities": text(row.income_utilities, fallback["Household utilities"]),
+    Medical: text(row.medical, fallback.Medical),
   };
 }
 
@@ -162,6 +206,7 @@ export function loanRowToSubmission(
       relativeAddress: row.nearest_relative_address || undefined,
       realAndPersonalProperties: row.real_and_personal_properties || undefined,
       healthDeclaration: row.health_declaration || undefined,
+      cashFlow: cashFlowDetails(row, documents.cashFlow),
       supportingDocuments: documents.files,
       additionalFields: documents.additionalFields,
     },

@@ -5,6 +5,10 @@ import {
   loanRowToSubmission,
   type LoanRow,
 } from "../credit-analyst/loans";
+import {
+  applicationCashFlowToAnalysis,
+  databaseCashFlowToAnalysis,
+} from "../credit-analyst/cash-flow";
 
 export type InvestigatorStatus =
   | "Open"
@@ -106,6 +110,7 @@ export function loanRowToInvestigatorLoan(
 ): InvestigatorLoan {
   const submission = loanRowToSubmission(row);
   const claimStatus = normalizeClaimStatus(row.claim_status);
+  const cashFlow = databaseCashFlowToAnalysis(row, submission.details?.cashFlow);
 
   return {
     databaseId: row.id,
@@ -121,6 +126,17 @@ export function loanRowToInvestigatorLoan(
     term: submission.term,
     details: submission.details,
     recommendedAmount: text(row.recommended_amount),
+    analysisData: {
+      recommendedAmount: text(row.recommended_amount),
+      businessStatus: "",
+      observations: "",
+      pendingRequirements: "",
+      lendingRecords: [],
+      plateNumber: "",
+      insurance: "",
+      ...cashFlow,
+      collateral: [],
+    },
   };
 }
 
@@ -162,8 +178,8 @@ export function attachInvestigation(
       })),
       plateNumber: text(investigation.plate_no),
       insurance: text(insurance.selected_option),
-      incomes: { sales1: "45000", sales2: "0", sales3: "0", salaries: "22000", pensions: "0", remittance: "0" },
-      expenses: { materials: "12000", businessUtilities: "3500", businessRent: "5000", personnel: "4000", taxes: "1200", loans: "2000", food: "8000", householdRent: "0", school: "2500", householdUtilities: "1800", medical: "1000" },
+      incomes: loan.analysisData?.incomes ?? applicationCashFlowToAnalysis(loan.details?.cashFlow).incomes,
+      expenses: loan.analysisData?.expenses ?? applicationCashFlowToAnalysis(loan.details?.cashFlow).expenses,
       collateral: records(investigation.collateral_items).map(item => ({
         description: text(item.item_description ?? item.description),
         age: collateralAges[text(item.age_range ?? item.age)] ?? text(item.age_range ?? item.age),

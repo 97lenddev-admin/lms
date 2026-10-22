@@ -6,6 +6,7 @@ import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import { applicationSections, coMakerSections, FormSection, Submission, SubmissionStatus } from "./data";
 import { DesktopNavigation, MobileHeader, MobileNavigation } from "./navigation";
 import { createLoanApplication, createLoanCoMaker, getLoanCoMaker, getLoanCoMakers, type ApplicationFormData } from "./actions";
+import { applicationCashFlowToAnalysis, cashFlowDisplayLabels, cashFlowGroups } from "./cash-flow";
 
 type Screen =
   | { type: "dashboard" }
@@ -286,7 +287,7 @@ function FormField({ label, textarea, value, readOnly = false, onValueChange }: 
   const updateValue = (nextValue: string) => { setInternalValue(nextValue); onValueChange?.(nextValue); };
   const normalizedLabel = label.toLowerCase();
   const isSelect = label !== "Relationship to borrower" && ["status", "gender", "product", "type", "relationship", "frequency", "religion", "civil", "citizenship", "region"].some(option => normalizedLabel.includes(option));
-  const placeholder = isSelect ? fieldPlaceholders[label] ?? `Select ${label.toLowerCase()}` : fieldPlaceholders[label] ?? (label.toLowerCase().includes("amount") || label.toLowerCase().includes("income") ? "PHP 0.00" : `Enter ${label.toLowerCase()}`);
+  const placeholder = isSelect ? fieldPlaceholders[label] ?? `Select ${label.toLowerCase()}` : fieldPlaceholders[label] ?? (label.toLowerCase().includes("amount") || label.toLowerCase().includes("income") || cashFlowDisplayLabels.includes(label) ? "PHP 0.00" : `Enter ${label.toLowerCase()}`);
   const options = selectOptions[label] ?? (normalizedLabel.includes("region") ? selectOptions.Region : []);
   const isBirthDate = normalizedLabel === "date of birth" || normalizedLabel === "birthday";
   const isDateField = isBirthDate || normalizedLabel.endsWith("release date");
@@ -295,6 +296,30 @@ function FormField({ label, textarea, value, readOnly = false, onValueChange }: 
 
 function MobileSectionHeading({ children }: { children: ReactNode }) {
   return <h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase text-[#404040]">{children}</h2>;
+}
+
+function CashFlowApplicationFields({ values, onFieldChange }: { values: Record<string, string>; onFieldChange: (field: string, value: string) => void }) {
+  const { incomes, expenses } = applicationCashFlowToAnalysis(values);
+  const total = (group: Record<string, string>, keys: string[]) => keys.reduce((sum, key) => sum + numericValue(group[key] ?? ""), 0);
+  const netBusiness = total(incomes, ["sales1", "sales2", "sales3"]) - total(expenses, ["materials", "businessUtilities", "businessRent", "personnel", "taxes", "loans"]);
+  const netHousehold = total(incomes, ["salaries", "pensions", "remittance"]) - total(expenses, ["food", "householdRent", "school", "householdUtilities", "medical"]);
+  const available = netBusiness + netHousehold;
+  const capacity = available * 0.35;
+  const maxLoanable = Math.max(0, Math.min(65000, Math.floor(capacity / 1000) * 1000));
+
+  return <div className="space-y-7">
+    <p className="text-sm leading-5 text-[#525252]">Record the client&apos;s income and expenses. These values will be read-only for the credit investigator.</p>
+    {cashFlowGroups.map(group => <section key={group.title}>
+      <MobileSectionHeading>{group.title}</MobileSectionHeading>
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">{group.fields.map(({ key, label, applicationKey }) => { const fieldKey = applicationKey ?? label; return <FormField key={key} label={label} value={values[fieldKey] ?? ""} onValueChange={value => onFieldChange(fieldKey, value)} />; })}</div>
+      {group.title === "Business expenses" && <div className="mt-4 flex items-center justify-between rounded-lg bg-[#fafafa] px-3 py-3 text-sm font-semibold"><span>Net business income</span><span>{peso(netBusiness)}</span></div>}
+      {group.title === "Household expenses" && <div className="mt-4 flex items-center justify-between rounded-lg bg-[#fafafa] px-3 py-3 text-sm font-semibold"><span>Net household income</span><span>{peso(netHousehold)}</span></div>}
+    </section>)}
+    <section>
+      <MobileSectionHeading>Debt capacity analysis</MobileSectionHeading>
+      <dl className="mt-3 space-y-2">{[["Amount available for debt service", available], ["Adjusted debt capacity (35%)", capacity], ["Max loanable amount — 100 day term", maxLoanable]].map(([label, value]) => <div key={String(label)} className="flex items-center justify-between rounded-lg bg-[#fafafa] px-3 py-3 text-sm"><dt className="text-[#525252]">{label}</dt><dd className="font-semibold">{peso(Number(value))}</dd></div>)}</dl>
+    </section>
+  </div>;
 }
 
 function MobileApplicationFields({ section, values, childAdded, childData, businesses, onFieldChange, onChild, onBusiness, onAddField }: { section: FormSection; values: Record<string, string>; childAdded: boolean; childData: Record<string, string>; businesses: Record<string, string>[]; onFieldChange: (field: string, value: string) => void; onChild: () => void; onBusiness: (index?: number) => void; onAddField: () => void }) {
@@ -313,6 +338,7 @@ function MobileApplicationFields({ section, values, childAdded, childData, busin
   if (section.id === "other") return <div>{field("Real and personal properties owned")}<fieldset className="mt-6"><legend className="text-xs font-semibold uppercase text-[#525252]">Health declaration</legend><div className="mt-3 flex flex-col gap-3 text-sm">{["In good health", "Has pre-existing illness"].map(option => <label key={option}><input required checked={(values["Health declaration"] || "In good health") === option} onChange={() => onFieldChange("Health declaration", option)} type="radio" name="mobile-health" className="mr-2 accent-[#e11d48]" />{option}</label>)}</div></fieldset></div>;
   if (section.id === "relative") return <div><p className="mb-3 text-sm leading-5 text-[#525252]">Someone who can be reached if the client cannot be.</p><div className="grid gap-4">{field("Name")}{field("Contact number")}{field("Address")}</div></div>;
   if (section.id === "loan") { const schedule = generatePaymentSchedule(values["Loan amount"] ?? "", values.Term ?? ""); return <div><div className="grid gap-4">{field("Loan product")}{field("Loan amount")}{field("Term")}</div><div className="mt-4 border-t border-[#e5e5e5] pt-4"><div className="rounded-xl border border-black/10 bg-[#fafafa] p-3 text-sm text-[#525252] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Generates the payment schedule<br/>{schedule.length ? <strong className="text-base text-[#404040]">{schedule.length} daily payments of {schedule[0].amount}</strong> : <strong className="text-base text-[#737373]">Enter a loan amount and term</strong>}</div></div></div>; }
+  if (section.id === "cashflow") return <CashFlowApplicationFields values={values} onFieldChange={onFieldChange} />;
   if (section.id === "co-personal") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>Name</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Last name", "col-span-2")}{field("First name")}{field("Middle name")}</div></section><section><MobileSectionHeading>Identity</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Date of birth")}{field("Age")}{field("Civil status")}{field("Gender")}{field("Citizenship", "col-span-2")}{field("Place of birth", "col-span-2")}</div></section><section><MobileSectionHeading>Contact</MobileSectionHeading><div className="mt-3 grid gap-4">{field("Contact number")}{field("Email / Facebook address")}{field("Relationship to borrower")}</div></section></div>;
   if (section.id === "co-address") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>Home address</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Home address", "col-span-2")}{field("Home barangay")}{field("Home city/town")}{field("Home ZIP code")}{field("Home region")}</div></section><section><MobileSectionHeading>Provincial address</MobileSectionHeading><label className="mt-3 flex items-center text-sm"><input type="checkbox" className="mr-2 accent-[#e11d48]" />Same as home address</label><div className="mt-4 grid grid-cols-2 gap-4">{field("Provincial address", "col-span-2")}{field("Provincial barangay")}{field("Provincial city/town")}{field("Provincial ZIP code")}{field("Provincial region")}</div></section><fieldset><legend className="text-xs font-semibold uppercase text-[#525252]">Present address</legend><div className="mt-3 grid grid-cols-2 gap-3 text-sm">{["Rented", "Living with parents", "Owned", "Mortgaged", "Others"].map(option => <label key={option}><input required checked={values["Present address"] === option} onChange={() => onFieldChange("Present address", option)} type="radio" name="co-mobile-residence" className="mr-2 accent-[#e11d48]" />{option}</label>)}</div></fieldset></div>;
   if (section.id === "co-household") return <section><MobileSectionHeading>Children</MobileSectionHeading><div className="mt-3">{field("Number of children")}<p className="mt-1 text-sm text-[#525252]">2 rows generated from the count above.</p><div className="mt-3 flex flex-col gap-3"><button type="button" onClick={onChild} className="flex items-center rounded-xl border border-[#e5e5e5] p-4 text-left"><span className="flex-1"><span className="block text-sm">Ana Dela Cruz</span><span className="text-xs text-[#737373]">Grade 6 · San Roque Elem. · 11</span></span><span>›</span></button><button type="button" onClick={onChild} className="flex items-center rounded-xl border border-red-400 p-4 text-left"><span className="flex-1"><span className="block text-sm">Child 2</span><span className="text-xs text-red-500">Not filled in yet</span></span><span>›</span></button><button type="button" onClick={onChild} className="rounded-lg border border-dashed border-[#d4d4d4] py-3 text-sm font-medium text-[#737373]">＋ Add another child</button></div></div></section>;
@@ -434,6 +460,8 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
             <div className="mt-6">
               {section.id === "documents" ? (
                 <><Documents initialFiles={desktopDocuments} onFilesChange={setDesktopDocuments} onAddField={() => setShowAddField(true)} />{customFields.map((fieldId, index) => { const label = `Additional field ${index + 1}`; return <div key={fieldId} className="mt-6 flex items-end gap-3"><div className="flex-1"><FormField label={label} textarea value={customFieldValues[label] ?? ""} onValueChange={value => setCustomFieldValues(current => ({ ...current, [label]: value }))} /></div><button type="button" onClick={() => { setCustomFields(current => current.filter(id => id !== fieldId)); setCustomFieldValues(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== label))); }} className="mb-2 flex size-8 items-center justify-center rounded-md hover:bg-[#fafafa]" aria-label={`Delete additional field ${index + 1}`}><Image src="/credit-analyst/icons/trash.svg" alt="" width={20} height={20} /></button></div>; })}</>
+              ) : section.id === "cashflow" ? (
+                <CashFlowApplicationFields values={values.cashflow ?? {}} onFieldChange={(field, value) => updateValue("cashflow", field, value)} />
               ) : (
                 <div className={`grid gap-x-6 gap-y-6 ${section.id === "personal" ? "grid-cols-12" : section.id === "business" || section.id === "relative" ? "grid-cols-2" : "grid-cols-3"}`}>
                   {section.fields?.filter(field => section.id !== "business" && !(section.id === "personal" && ["Contact number", "Email / Facebook address"].includes(field))).map(field => (

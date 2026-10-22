@@ -1,3 +1,5 @@
+import { cashFlowFieldLabels } from "./cash-flow";
+
 export type SubmissionStatus =
   | "Active"
   | "Approved"
@@ -77,6 +79,7 @@ export type Submission = {
     relativeAddress?: string;
     realAndPersonalProperties?: string;
     healthDeclaration?: string;
+    cashFlow?: Record<string, string>;
     supportingDocuments?: { name: string; size: string }[];
     additionalFields?: Record<string, string>;
   };
@@ -150,6 +153,7 @@ export const applicationSections: FormSection[] = [
   { id: "loan", title: "Loan details", summary: "", fields: ["Loan product", "Loan amount", "Term"] },
   { id: "documents", title: "Supporting documents", summary: "2 files · no note added" },
   { id: "schedule", title: "Payment schedule", summary: "Set loan details first" },
+  { id: "cashflow", title: "Cash flow", summary: "Income, expenses, and debt capacity", fields: cashFlowFieldLabels },
 ];
 
 export const coMakerSections: FormSection[] = [

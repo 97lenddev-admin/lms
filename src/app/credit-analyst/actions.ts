@@ -9,6 +9,7 @@ import {
   coMakerRowToDetails,
   type LoanCoMakerRow,
 } from "./co-makers";
+import { cashFlowFieldLabels, cashFlowFields } from "./cash-flow";
 
 export type ApplicationFormData = Record<string, Record<string, string>>;
 
@@ -135,6 +136,7 @@ export async function createLoanApplication(
   const relative = form.relative ?? {};
   const loan = form.loan ?? {};
   const other = form.other ?? {};
+  const cashFlow = form.cashflow ?? {};
   const children = recordRows(form.__children);
   const businesses = recordRows(form.__businesses);
   const supportingDocuments = recordRows(form.__documents).map(document => ({ name: document.name ?? "Document", size: document.size ?? "Unknown size" }));
@@ -158,6 +160,7 @@ export async function createLoanApplication(
     ["Gross monthly income", business["Gross monthly income"]],
     ["Household years", household.Years],
     ["Monthly income/salary", household["Monthly income/salary"]],
+    ...cashFlowFieldLabels.map((field): [string, string | undefined] => [field, cashFlow[field]]),
   ];
   const invalidField = numericFields.find(([, value]) => invalidNumericValue(value));
   if (invalidField) {
@@ -192,6 +195,13 @@ export async function createLoanApplication(
     real_and_personal_properties: cleanText(other["Real and personal properties owned"]),
     health_declaration: cleanText(other["Health declaration"]),
   };
+  const cashFlowColumns = Object.fromEntries(
+    cashFlowFields.flatMap(({ label, applicationKey, databaseColumn }) =>
+      databaseColumn
+        ? [[databaseColumn, numberValue(cashFlow[applicationKey ?? label])]]
+        : [],
+    ),
+  );
 
   const payload = {
     loan_id: `LN-${Date.now().toString().slice(-8)}`,
@@ -210,9 +220,11 @@ export async function createLoanApplication(
         version: 1,
         emailFacebookAddress: cleanText(personal["Email / Facebook address"]),
         spouseAge: cleanText(household.Age),
+        cashFlow,
         additionalFields: form.__custom ?? {},
       },
     ],
+    ...cashFlowColumns,
     ...Object.fromEntries(
       Object.entries(optionalFields).filter(([, value]) => value !== undefined),
     ),
