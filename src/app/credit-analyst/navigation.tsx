@@ -111,7 +111,7 @@ function InvestigatorNavigationContent({ active, onNavigate, userProfile, showLo
 }
 
 export function InvestigatorDesktopNavigation(props: InvestigatorNavigationProps) {
-  return <aside className="fixed inset-y-0 left-0 z-20 hidden w-[280px] flex-col border-r border-[#e5e5e5] bg-white lg:flex"><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} /></aside>;
+  return <aside className="fixed inset-y-0 left-0 z-20 hidden w-[280px] flex-col border-r border-[#e5e5e5] bg-white print:!hidden lg:flex"><InvestigatorNavigationContent active={props.active} onNavigate={props.onNavigate} userProfile={props.userProfile} /></aside>;
 }
 
 export function InvestigatorMobileNavigation(props: InvestigatorNavigationProps) {

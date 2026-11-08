@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { UserProfileIdentity } from "@/lib/supabase/user-role";
 import { applicationSections, coMakerSections, FormSection, Submission, SubmissionStatus } from "./data";
 import { DesktopNavigation, MobileHeader, MobileNavigation } from "./navigation";
-import { createLoanApplication, createLoanCoMaker, getLoanCoMaker, getLoanCoMakers, type ApplicationFormData } from "./actions";
+import { createLoanApplication, createLoanCoMaker, createLoanDocumentViewUrl, deleteLoanDocument, getLoanCoMaker, getLoanCoMakers, uploadLoanDocument, uploadLoanIdPicture, type ApplicationFormData } from "./actions";
 import { applicationCashFlowToAnalysis, cashFlowDisplayLabels, cashFlowGroups } from "./cash-flow";
 
 type Screen =
@@ -23,7 +23,7 @@ type Screen =
   | { type: "submission"; loan: Submission };
 
 type FormDataState = ApplicationFormData;
-type DocumentMetadata = { name: string; size: string; progress: number };
+type DocumentMetadata = { name: string; size: string; progress: number; path?: string; previewUrl?: string; uploadError?: string };
 
 type ApplicationDraft = {
   version: 1;
@@ -86,7 +86,7 @@ function decodedRows(section?: Record<string, string>) {
 function decodedDocuments(value?: string): DocumentMetadata[] {
   try {
     const files = JSON.parse(value ?? "[]");
-    return Array.isArray(files) ? files.filter(file => file && typeof file.name === "string" && typeof file.size === "string").map(file => ({ name: file.name, size: file.size, progress: 100 })) : [];
+    return Array.isArray(files) ? files.filter(file => file && typeof file.name === "string" && typeof file.size === "string").map(file => ({ name: file.name, size: file.size, progress: 100, ...(typeof file.path === "string" ? { path: file.path } : {}) })) : [];
   } catch {
     return [];
   }
@@ -122,6 +122,19 @@ function calculateAge(dateOfBirth: string) {
   let age = today.getFullYear() - year;
   if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
   return age >= 0 ? String(age) : "";
+}
+
+function dateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function latestBirthDate(minimumAge: number) {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - minimumAge);
+  return dateInputValue(date);
 }
 
 function StatusBadge({ status }: { status: SubmissionStatus }) {
@@ -281,7 +294,7 @@ const selectOptions: Record<string, string[]> = {
   "Loan product": ["Daily", "Weekly", "Semi-monthly", "Monthly"],
 };
 
-function FormField({ label, textarea, value, readOnly = false, onValueChange }: { label: string; textarea?: boolean; value?: string; readOnly?: boolean; onValueChange?: (value: string) => void }) {
+function FormField({ label, textarea, value, readOnly = false, required = true, minimumAge, onValueChange }: { label: string; textarea?: boolean; value?: string; readOnly?: boolean; required?: boolean; minimumAge?: number; onValueChange?: (value: string) => void }) {
   const [internalValue, setInternalValue] = useState(value ?? "");
   const currentValue = value ?? internalValue;
   const updateValue = (nextValue: string) => { setInternalValue(nextValue); onValueChange?.(nextValue); };
@@ -291,7 +304,8 @@ function FormField({ label, textarea, value, readOnly = false, onValueChange }: 
   const options = selectOptions[label] ?? (normalizedLabel.includes("region") ? selectOptions.Region : []);
   const isBirthDate = normalizedLabel === "date of birth" || normalizedLabel === "birthday";
   const isDateField = isBirthDate || normalizedLabel.endsWith("release date");
-  return <label className="flex flex-col gap-1.5 text-xs font-semibold uppercase tracking-[0.01em] text-[#525252]">{label}{label === "Email / Facebook address" ? <span className="flex h-10 overflow-hidden rounded-lg border border-[#d4d4d4] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus-within:border-[#e11d48]"><span className="flex items-center border-r border-[#d4d4d4] px-3 text-base font-normal normal-case text-[#525252]">URL</span><input required value={currentValue} onChange={event => updateValue(event.target.value)} className="min-w-0 flex-1 px-3 text-base font-normal normal-case text-[#171717] outline-none placeholder:text-[#a3a3a3]" placeholder={placeholder} /></span> : textarea ? <textarea required value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} h-[124px] resize-none py-3`} placeholder={placeholder} /> : isDateField ? <input required type="date" max={isBirthDate ? new Date().toISOString().slice(0, 10) : undefined} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} min-w-0 text-base font-normal normal-case text-[#525252]`} /> : isSelect ? <select required value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} text-base font-normal normal-case ${currentValue ? "text-[#171717]" : "text-[#a3a3a3]"}`}><option value="" disabled>{placeholder}</option>{options.map(option => <option key={option} value={option} className="text-[#171717]">{option}</option>)}</select> : <input required={!readOnly} readOnly={readOnly} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} text-base font-normal normal-case ${readOnly ? "bg-[#fafafa] text-[#525252]" : ""}`} placeholder={readOnly ? "" : placeholder} />}</label>;
+  const isAgeField = normalizedLabel === "age";
+  return <label className="flex flex-col gap-1.5 text-xs font-semibold uppercase tracking-[0.01em] text-[#525252]">{label}{label === "Email / Facebook address" ? <span className="flex h-10 overflow-hidden rounded-lg border border-[#d4d4d4] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus-within:border-[#e11d48]"><span className="flex items-center border-r border-[#d4d4d4] px-3 text-base font-normal normal-case text-[#525252]">URL</span><input required={required} value={currentValue} onChange={event => updateValue(event.target.value)} className="min-w-0 flex-1 px-3 text-base font-normal normal-case text-[#171717] outline-none placeholder:text-[#a3a3a3]" placeholder={placeholder} /></span> : textarea ? <textarea required={required} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} h-[124px] resize-none py-3`} placeholder={placeholder} /> : isDateField ? <input required={required} type="date" max={isBirthDate ? minimumAge ? latestBirthDate(minimumAge) : dateInputValue(new Date()) : undefined} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} min-w-0 text-base font-normal normal-case text-[#525252]`} /> : isSelect ? <select required={required} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} text-base font-normal normal-case ${currentValue ? "text-[#171717]" : "text-[#a3a3a3]"}`}><option value="" disabled>{placeholder}</option>{options.map(option => <option key={option} value={option} className="text-[#171717]">{option}</option>)}</select> : <input required={required && !readOnly} readOnly={readOnly} type={isAgeField && !readOnly ? "number" : "text"} min={isAgeField ? minimumAge : undefined} value={currentValue} onChange={event => updateValue(event.target.value)} className={`${inputClass} text-base font-normal normal-case ${readOnly ? "bg-[#fafafa] text-[#525252]" : ""}`} placeholder={readOnly ? "" : placeholder} />}</label>;
 }
 
 function MobileSectionHeading({ children }: { children: ReactNode }) {
@@ -322,10 +336,21 @@ function CashFlowApplicationFields({ values, onFieldChange }: { values: Record<s
   </div>;
 }
 
-function MobileApplicationFields({ section, values, childAdded, childData, businesses, onFieldChange, onChild, onBusiness, onAddField }: { section: FormSection; values: Record<string, string>; childAdded: boolean; childData: Record<string, string>; businesses: Record<string, string>[]; onFieldChange: (field: string, value: string) => void; onChild: () => void; onBusiness: (index?: number) => void; onAddField: () => void }) {
-  const field = (label: string, extra = "") => <div className={extra}><FormField label={label} textarea={label.toLowerCase().includes("properties") || label.toLowerCase().includes("remarks")} value={values[label] ?? ""} readOnly={label === "Age" && ["personal", "co-personal"].includes(section.id)} onValueChange={value => { onFieldChange(label, value); if (label === "Date of birth") onFieldChange("Age", calculateAge(value)); }} /></div>;
-  if (section.id === "documents") return <Documents mobileUploadOnly initialFiles={decodedDocuments(values.__files)} onFilesChange={files => onFieldChange("__files", JSON.stringify(files.map(({ name, size }) => ({ name, size }))))} onAddField={onAddField} />;
+function MobileApplicationFields({ section, values, additionalFields = {}, childAdded, childData, businesses, spouseRequired = false, onFieldChange, onAdditionalFieldsChange = () => {}, onChild, onBusiness, onAddField }: { section: FormSection; values: Record<string, string>; additionalFields?: Record<string, string>; childAdded: boolean; childData: Record<string, string>; businesses: Record<string, string>[]; spouseRequired?: boolean; onFieldChange: (field: string, value: string) => void; onAdditionalFieldsChange?: (fields: Record<string, string>) => void; onChild: () => void; onBusiness: (index?: number) => void; onAddField: () => void }) {
+  const field = (label: string, extra = "") => {
+    const adultIdentityField = ["personal", "co-personal"].includes(section.id) && ["Date of birth", "Age"].includes(label);
+    const spouseAgeField = section.id === "household" && label === "Age";
+    return <div className={extra}><FormField label={label} textarea={label.toLowerCase().includes("properties") || label.toLowerCase().includes("remarks")} value={values[label] ?? ""} readOnly={label === "Age" && ["personal", "co-personal"].includes(section.id)} required={section.id !== "household" || spouseRequired} minimumAge={adultIdentityField || spouseAgeField ? 18 : undefined} onValueChange={value => { onFieldChange(label, value); if (label === "Date of birth") onFieldChange("Age", calculateAge(value)); }} /></div>;
+  };
+  if (section.id === "documents") return <div>
+    <Documents mobileUploadOnly initialFiles={decodedDocuments(values.__files)} onFilesChange={files => onFieldChange("__files", JSON.stringify(files.map(({ name, size, path }) => ({ name, size, ...(path ? { path } : {}) }))))} onAddField={onAddField} />
+    {Object.entries(additionalFields).map(([label, value]) => <div key={label} className="mt-6 flex items-end gap-3">
+      <div className="min-w-0 flex-1"><FormField label={label} textarea value={value} onValueChange={nextValue => onAdditionalFieldsChange({ ...additionalFields, [label]: nextValue })} /></div>
+      <button type="button" onClick={() => onAdditionalFieldsChange(Object.fromEntries(Object.entries(additionalFields).filter(([key]) => key !== label)))} className="mb-2 flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-[#fafafa]" aria-label={`Delete ${label}`}><Image src="/credit-analyst/icons/trash.svg" alt="" width={20} height={20} /></button>
+    </div>)}
+  </div>;
   if (section.id === "personal") return <div className="flex flex-col gap-6">
+    <section><MobileSectionHeading>2x2 picture</MobileSectionHeading><div className="mt-3"><PhotoUpload value={values.__picture} onChange={value => onFieldChange("__picture", value)} /></div></section>
     <section><MobileSectionHeading>Name</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-2">{field("Last name", "col-span-2")}{field("First name")}{field("Middle name")}</div></section>
     <section><MobileSectionHeading>Identity</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-2">{field("Date of birth")}{field("Age")}{field("Civil status")}{field("Gender")}{field("Citizenship", "col-span-2")}{field("Place of birth", "col-span-2")}</div></section>
     <section><MobileSectionHeading>Permanent address</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-2">{field("Permanent address", "col-span-2")}{field("Barangay")}{field("City/Town")}{field("ZIP code")}{field("Region")}</div></section>
@@ -339,7 +364,7 @@ function MobileApplicationFields({ section, values, childAdded, childData, busin
   if (section.id === "relative") return <div><p className="mb-3 text-sm leading-5 text-[#525252]">Someone who can be reached if the client cannot be.</p><div className="grid gap-4">{field("Name")}{field("Contact number")}{field("Address")}</div></div>;
   if (section.id === "loan") { const schedule = generatePaymentSchedule(values["Loan amount"] ?? "", values.Term ?? ""); return <div><div className="grid gap-4">{field("Loan product")}{field("Loan amount")}{field("Term")}</div><div className="mt-4 border-t border-[#e5e5e5] pt-4"><div className="rounded-xl border border-black/10 bg-[#fafafa] p-3 text-sm text-[#525252] shadow-[0_1px_2px_rgba(0,0,0,0.05)]">Generates the payment schedule<br/>{schedule.length ? <strong className="text-base text-[#404040]">{schedule.length} daily payments of {schedule[0].amount}</strong> : <strong className="text-base text-[#737373]">Enter a loan amount and term</strong>}</div></div></div>; }
   if (section.id === "cashflow") return <CashFlowApplicationFields values={values} onFieldChange={onFieldChange} />;
-  if (section.id === "co-personal") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>Name</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Last name", "col-span-2")}{field("First name")}{field("Middle name")}</div></section><section><MobileSectionHeading>Identity</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Date of birth")}{field("Age")}{field("Civil status")}{field("Gender")}{field("Citizenship", "col-span-2")}{field("Place of birth", "col-span-2")}</div></section><section><MobileSectionHeading>Contact</MobileSectionHeading><div className="mt-3 grid gap-4">{field("Contact number")}{field("Email / Facebook address")}{field("Relationship to borrower")}</div></section></div>;
+  if (section.id === "co-personal") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>2x2 picture</MobileSectionHeading><div className="mt-3"><PhotoUpload value={values.__picture} onChange={value => onFieldChange("__picture", value)} /></div></section><section><MobileSectionHeading>Name</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Last name", "col-span-2")}{field("First name")}{field("Middle name")}</div></section><section><MobileSectionHeading>Identity</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Date of birth")}{field("Age")}{field("Civil status")}{field("Gender")}{field("Citizenship", "col-span-2")}{field("Place of birth", "col-span-2")}</div></section><section><MobileSectionHeading>Contact</MobileSectionHeading><div className="mt-3 grid gap-4">{field("Contact number")}{field("Email / Facebook address")}{field("Relationship to borrower")}</div></section></div>;
   if (section.id === "co-address") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>Home address</MobileSectionHeading><div className="mt-3 grid grid-cols-2 gap-4">{field("Home address", "col-span-2")}{field("Home barangay")}{field("Home city/town")}{field("Home ZIP code")}{field("Home region")}</div></section><section><MobileSectionHeading>Provincial address</MobileSectionHeading><label className="mt-3 flex items-center text-sm"><input type="checkbox" className="mr-2 accent-[#e11d48]" />Same as home address</label><div className="mt-4 grid grid-cols-2 gap-4">{field("Provincial address", "col-span-2")}{field("Provincial barangay")}{field("Provincial city/town")}{field("Provincial ZIP code")}{field("Provincial region")}</div></section><fieldset><legend className="text-xs font-semibold uppercase text-[#525252]">Present address</legend><div className="mt-3 grid grid-cols-2 gap-3 text-sm">{["Rented", "Living with parents", "Owned", "Mortgaged", "Others"].map(option => <label key={option}><input required checked={values["Present address"] === option} onChange={() => onFieldChange("Present address", option)} type="radio" name="co-mobile-residence" className="mr-2 accent-[#e11d48]" />{option}</label>)}</div></fieldset></div>;
   if (section.id === "co-household") return <section><MobileSectionHeading>Children</MobileSectionHeading><div className="mt-3">{field("Number of children")}<p className="mt-1 text-sm text-[#525252]">2 rows generated from the count above.</p><div className="mt-3 flex flex-col gap-3"><button type="button" onClick={onChild} className="flex items-center rounded-xl border border-[#e5e5e5] p-4 text-left"><span className="flex-1"><span className="block text-sm">Ana Dela Cruz</span><span className="text-xs text-[#737373]">Grade 6 · San Roque Elem. · 11</span></span><span>›</span></button><button type="button" onClick={onChild} className="flex items-center rounded-xl border border-red-400 p-4 text-left"><span className="flex-1"><span className="block text-sm">Child 2</span><span className="text-xs text-red-500">Not filled in yet</span></span><span>›</span></button><button type="button" onClick={onChild} className="rounded-lg border border-dashed border-[#d4d4d4] py-3 text-sm font-medium text-[#737373]">＋ Add another child</button></div></div></section>;
   if (section.id === "co-business") return <div className="flex flex-col gap-6"><section><MobileSectionHeading>Business</MobileSectionHeading><div className="flex flex-col gap-3">{businesses.map((business, index) => <button key={`${business["Business name"]}-${index}`} type="button" onClick={() => onBusiness(index)} className="first:mt-3 flex w-full items-center rounded-xl border border-[#e5e5e5] p-4 text-left"><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-[#525252]">{business["Business name"]}</span><span className="text-xs text-[#737373]">{[business.Type, business.Address, business.Years && `${business.Years} yrs`].filter(Boolean).join(" · ")}</span></span><span className="text-xl text-[#a3a3a3]">›</span></button>)}</div><button type="button" onClick={() => onBusiness()} className="mt-3 w-full rounded-lg border border-dashed border-[#e5e5e5] py-3 text-sm font-semibold text-[#737373]">＋ {businesses.length ? "Add another business" : "Add business"}</button></section><section><MobileSectionHeading>Income</MobileSectionHeading><div className="mt-3">{field("Gross monthly income")}<p className="mt-2 text-sm text-[#525252]">Combined across all businesses listed above.</p></div></section></div>;
@@ -347,7 +372,7 @@ function MobileApplicationFields({ section, values, childAdded, childData, busin
   return <div className="grid gap-4">{section.fields?.map(label => field(label))}</div>;
 }
 
-function SectionForm({ section, values = {}, childAdded = false, childData = {}, businesses = [], onFieldChange, onBack, onDone, onChild, onBusiness = () => {} }: { section: FormSection; values?: Record<string, string>; childAdded?: boolean; childData?: Record<string, string>; businesses?: Record<string, string>[]; onFieldChange: (field: string, value: string) => void; onBack: () => void; onDone: () => void; onChild: () => void; onBusiness?: (index?: number) => void }) {
+function SectionForm({ section, values = {}, additionalFields = {}, childAdded = false, childData = {}, businesses = [], spouseRequired = false, onFieldChange, onAdditionalFieldsChange = () => {}, onBack, onDone, onChild, onBusiness = () => {} }: { section: FormSection; values?: Record<string, string>; additionalFields?: Record<string, string>; childAdded?: boolean; childData?: Record<string, string>; businesses?: Record<string, string>[]; spouseRequired?: boolean; onFieldChange: (field: string, value: string) => void; onAdditionalFieldsChange?: (fields: Record<string, string>) => void; onBack: () => void; onDone: () => void; onChild: () => void; onBusiness?: (index?: number) => void }) {
   const [showAddField, setShowAddField] = useState(false);
   const isDocs = section.id === "documents";
   const isSchedule = section.id === "schedule";
@@ -355,11 +380,11 @@ function SectionForm({ section, values = {}, childAdded = false, childData = {},
   return (
     <PageShell title={section.title} back={onBack} action={<button onClick={onBack} className="text-sm font-semibold text-[#be123c]">Done</button>}>
       <form onSubmit={(e) => { e.preventDefault(); onDone(); }} className="mx-auto max-w-3xl px-4 pb-28 pt-7 lg:px-8">
-        <MobileApplicationFields section={section} values={values} childAdded={childAdded} childData={childData} businesses={businesses} onFieldChange={onFieldChange} onChild={onChild} onBusiness={onBusiness} onAddField={() => setShowAddField(true)} />
+        <MobileApplicationFields section={section} values={values} additionalFields={additionalFields} childAdded={childAdded} childData={childData} businesses={businesses} spouseRequired={spouseRequired} onFieldChange={onFieldChange} onAdditionalFieldsChange={onAdditionalFieldsChange} onChild={onChild} onBusiness={onBusiness} onAddField={() => setShowAddField(true)} />
         {!isDocs && <button className={`${primaryButton} mt-8 w-full`} type="submit">Save & continue</button>}
         {isDocs && <button className={`${primaryButton} mt-8 w-full`} type="submit">Save & continue</button>}
       </form>
-      {showAddField && <Modal title="Add field" onClose={() => setShowAddField(false)}><p className="mb-4 text-sm text-[#525252]">Choose what you&apos;d like to add to this submission.</p><button onClick={() => setShowAddField(false)} className="flex w-full items-start gap-3 rounded-xl border border-[#d4d4d4] p-4 text-left"><span className="text-xl">▣</span><span><strong className="block text-sm">Text area</strong><span className="mt-1 block text-sm text-[#525252]">Add a note or remark about this submission</span></span></button><div className="mt-3 flex gap-3 rounded-xl border border-[#d4d4d4] bg-[#fafafa] p-4 text-sm text-[#525252]"><span>ⓘ</span><span>Selecting this will add an open text field below the documents section.</span></div></Modal>}
+      {showAddField && <Modal title="Add field" onClose={() => setShowAddField(false)}><p className="mb-4 text-sm text-[#525252]">Choose what you&apos;d like to add to this submission.</p><button onClick={() => { const fieldNumber = Math.max(0, ...Object.keys(additionalFields).map(label => Number(label.match(/^Additional field (\d+)$/)?.[1]) || 0)) + 1; onAdditionalFieldsChange({ ...additionalFields, [`Additional field ${fieldNumber}`]: "" }); setShowAddField(false); }} className="flex w-full items-start gap-3 rounded-xl border border-[#d4d4d4] p-4 text-left"><span className="text-xl">▣</span><span><strong className="block text-sm">Text area</strong><span className="mt-1 block text-sm text-[#525252]">Add a note or remark about this submission</span></span></button><div className="mt-3 flex gap-3 rounded-xl border border-[#d4d4d4] bg-[#fafafa] p-4 text-sm text-[#525252]"><span>ⓘ</span><span>Selecting this will add an open text field below the documents section.</span></div></Modal>}
     </PageShell>
   );
 }
@@ -392,20 +417,149 @@ function BusinessForm({ values, number, onBack, onRemove, onSave }: { values: Re
 
 function Documents({ onAddField, initialFiles = [], onFilesChange }: { onAddField: () => void; mobileUploadOnly?: boolean; initialFiles?: DocumentMetadata[]; onFilesChange?: (files: DocumentMetadata[]) => void }) {
   const [files, setFiles] = useState<DocumentMetadata[]>(initialFiles);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const updateFiles = (next: DocumentMetadata[]) => {
     setFiles(next);
-    onFilesChange?.(next);
+    onFilesChange?.(next.filter(file => !file.uploadError));
   };
-  const addFiles = (selectedFiles: FileList | null) => {
+  const addFiles = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return;
-    const nextFiles = Array.from(selectedFiles).filter(file => file.size <= 5 * 1024 * 1024).map(file => ({ name: file.name, size: file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`, progress: 100 }));
-    updateFiles([...files, ...nextFiles]);
+    setUploading(true);
+    setUploadError("");
+    let nextFiles = [...files];
+    for (const file of Array.from(selectedFiles)) {
+      const previewUrl = URL.createObjectURL(file);
+      const placeholder: DocumentMetadata = {
+        name: file.name,
+        size: file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        progress: 0,
+        previewUrl,
+      };
+      nextFiles = [...nextFiles, placeholder];
+      setFiles(nextFiles);
+      const formData = new FormData();
+      formData.set("file", file);
+      const result = await uploadLoanDocument(formData);
+      if (!result.ok) {
+        setUploadError(result.error);
+        nextFiles = nextFiles.map(item => item.previewUrl === previewUrl ? { ...item, uploadError: result.error } : item);
+        setFiles(nextFiles);
+        continue;
+      }
+      nextFiles = nextFiles.map(item => item.previewUrl === previewUrl ? { ...result.document, progress: 100, previewUrl } : item);
+      updateFiles(nextFiles);
+    }
+    setUploading(false);
   };
-  return <div><label className="flex min-h-[126px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#e5e5e5] text-center"><span className="flex size-10 items-center justify-center rounded-lg border border-[#d4d4d4] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05),inset_0_-2px_0_rgba(0,0,0,0.05),inset_0_0_0_1px_rgba(0,0,0,0.08)]"><Image src="/credit-analyst/icons/camera.svg" alt="" width={20} height={20} /></span><span className="mt-3 text-sm leading-5 text-[#525252]"><strong className="font-semibold text-[#be123c]">Click to upload</strong> or take a photo</span><span className="mt-1 text-xs leading-[18px] text-[#525252]">PNG, JPG (max. 5MB)</span><input type="file" accept="image/png,image/jpeg,application/pdf" multiple onChange={event => { addFiles(event.target.files); event.target.value = ""; }} className="sr-only" /></label><div className="mt-4 grid gap-3">{files.map((file, index) => <div key={`${file.name}-${index}`} className="relative flex min-h-[72px] items-start overflow-hidden rounded-xl border border-[#e5e5e5] p-4"><span aria-hidden className="absolute inset-y-0 left-0 hidden bg-[#fafafa] lg:block" style={{ width: file.progress === 100 ? "0" : `${50 + file.progress / 2}%` }} /><div className="relative flex min-w-0 flex-1 items-start gap-2"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} className="shrink-0" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium leading-5 text-[#404040]">{file.name}</p><div className="mt-0.5 flex items-center gap-2 text-sm leading-5 text-[#525252]"><span>{file.size}</span><span className="h-3 w-px bg-[#d4d4d4]" /><Image src={file.progress === 100 ? "/credit-analyst/icons/check-circle.svg" : "/credit-analyst/icons/upload-cloud.svg"} alt="" width={16} height={16} /><span>{file.progress}%</span></div></div></div><button type="button" onClick={() => updateFiles(files.filter((_, fileIndex) => fileIndex !== index))} aria-label={`Remove ${file.name}`} className="relative -mr-1 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md"><Image src="/credit-analyst/icons/trash.svg" alt="" width={16} height={16} /></button></div>)}</div><button type="button" onClick={onAddField} className="mt-6 inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[#d4d4d4] bg-white px-3 text-sm font-semibold text-[#404040] shadow-[0_1px_2px_rgba(0,0,0,0.05)] lg:w-auto lg:border-solid"><Image src="/credit-analyst/icons/plus.svg" alt="" width={20} height={20} />Add Field</button></div>;
+  const previewFile = async (file: DocumentMetadata) => {
+    if (file.previewUrl) {
+      window.open(file.previewUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!file.path) return;
+    const preview = window.open("about:blank", "_blank");
+    if (preview) preview.opener = null;
+    const result = await createLoanDocumentViewUrl(file.path);
+    if (!result.ok) {
+      preview?.close();
+      setUploadError(result.error);
+      return;
+    }
+    if (preview) preview.location.href = result.url;
+    else window.open(result.url, "_blank", "noopener,noreferrer");
+  };
+  const removeFile = async (index: number) => {
+    const file = files[index];
+    if (file.path) {
+      const result = await deleteLoanDocument(file.path);
+      if (!result.ok) {
+        setUploadError(result.error);
+        return;
+      }
+    }
+    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+    updateFiles(files.filter((_, fileIndex) => fileIndex !== index));
+  };
+  return <div><label className={`flex min-h-[126px] flex-col items-center justify-center rounded-xl border border-dashed border-[#e5e5e5] text-center ${uploading ? "cursor-wait opacity-60" : "cursor-pointer"}`}><span className="flex size-10 items-center justify-center rounded-lg border border-[#d4d4d4] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05),inset_0_-2px_0_rgba(0,0,0,0.05),inset_0_0_0_1px_rgba(0,0,0,0.08)]"><Image src="/credit-analyst/icons/camera.svg" alt="" width={20} height={20} /></span><span className="mt-3 text-sm leading-5 text-[#525252]"><strong className="font-semibold text-[#be123c]">{uploading ? "Uploading…" : "Click to upload"}</strong>{!uploading && " or take a photo"}</span><span className="mt-1 text-xs leading-[18px] text-[#525252]">PDF, PNG, JPG (max. 5MB)</span><input disabled={uploading} type="file" accept="image/png,image/jpeg,application/pdf" multiple onChange={event => { void addFiles(event.target.files); event.target.value = ""; }} className="sr-only" /></label>{uploadError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{uploadError}</p>}<div className="mt-4 grid gap-3">{files.map((file, index) => <div key={`${file.name}-${file.path ?? file.previewUrl ?? index}`} className={`relative flex min-h-[72px] items-start overflow-hidden rounded-xl border p-4 ${file.uploadError ? "border-red-300 bg-red-50" : "border-[#e5e5e5]"}`}><span aria-hidden className="absolute inset-y-0 left-0 hidden bg-[#fafafa] lg:block" style={{ width: file.progress === 100 ? "0" : `${50 + file.progress / 2}%` }} /><div className="relative flex min-w-0 flex-1 items-start gap-2"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} className="shrink-0" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium leading-5 text-[#404040]">{file.name}</p><div className={`mt-0.5 flex items-center gap-2 text-sm leading-5 ${file.uploadError ? "text-red-700" : "text-[#525252]"}`}><span>{file.size}</span><span className="h-3 w-px bg-[#d4d4d4]" /><Image src={file.progress === 100 ? "/credit-analyst/icons/check-circle.svg" : "/credit-analyst/icons/upload-cloud.svg"} alt="" width={16} height={16} /><span>{file.uploadError ? "Upload failed" : `${file.progress}%`}</span></div></div></div><button type="button" disabled={!file.previewUrl && !file.path} onClick={() => void previewFile(file)} className="relative ml-2 shrink-0 text-sm font-semibold text-[#be123c] disabled:text-[#a3a3a3]">Preview ↗</button><button type="button" onClick={() => void removeFile(index)} aria-label={`Remove ${file.name}`} className="relative -mr-1 -mt-1 ml-2 flex size-7 shrink-0 items-center justify-center rounded-md"><Image src="/credit-analyst/icons/trash.svg" alt="" width={16} height={16} /></button></div>)}</div><button type="button" onClick={onAddField} className="mt-6 inline-flex h-9 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[#d4d4d4] bg-white px-3 text-sm font-semibold text-[#404040] shadow-[0_1px_2px_rgba(0,0,0,0.05)] lg:w-auto lg:border-solid"><Image src="/credit-analyst/icons/plus.svg" alt="" width={20} height={20} />Add Field</button></div>;
+}
+
+function PhotoUpload({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
+  const initialPicture = (() => {
+    try {
+      const parsed = JSON.parse(value ?? "");
+      return parsed && typeof parsed.name === "string" && typeof parsed.size === "string" && typeof parsed.path === "string"
+        ? { name: parsed.name, size: parsed.size, path: parsed.path, progress: 100 } as DocumentMetadata
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const [picture, setPicture] = useState<DocumentMetadata | undefined>(initialPicture);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const selectPicture = async (file?: File) => {
+    if (!file || uploading) return;
+    if (!(["image/png", "image/jpeg"].includes(file.type)) || file.size > 5 * 1024 * 1024) {
+      setError("Choose a PNG or JPG image no larger than 5 MB.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    const previewUrl = URL.createObjectURL(file);
+    setPicture({ name: file.name, size: file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`, progress: 0, previewUrl });
+    const formData = new FormData();
+    formData.set("file", file);
+    const result = await uploadLoanIdPicture(formData);
+    setUploading(false);
+    if (!result.ok) {
+      setError(result.error);
+      setPicture(current => current ? { ...current, uploadError: result.error } : current);
+      return;
+    }
+    const next = { ...result.document, progress: 100, previewUrl };
+    setPicture(next);
+    onChange(JSON.stringify(result.document));
+  };
+  const previewPicture = async () => {
+    if (!picture) return;
+    if (picture.previewUrl) {
+      window.open(picture.previewUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!picture.path) return;
+    const preview = window.open("about:blank", "_blank");
+    if (preview) preview.opener = null;
+    const result = await createLoanDocumentViewUrl(picture.path);
+    if (!result.ok) {
+      preview?.close();
+      setError(result.error);
+      return;
+    }
+    if (preview) preview.location.href = result.url;
+    else window.open(result.url, "_blank", "noopener,noreferrer");
+  };
+  const removePicture = async () => {
+    if (!picture) return;
+    if (picture.path) {
+      const result = await deleteLoanDocument(picture.path);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+    }
+    if (picture.previewUrl) URL.revokeObjectURL(picture.previewUrl);
+    setPicture(undefined);
+    setError("");
+    onChange("");
+  };
+
+  return <div><p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.01em] text-[#525252]">2x2 picture</p>{picture ? <div className={`flex min-h-[84px] items-center rounded-xl border p-3 ${picture.uploadError ? "border-red-300 bg-red-50" : "border-[#e5e5e5]"}`}>{picture.previewUrl ? <Image unoptimized src={picture.previewUrl} alt="2x2 picture preview" width={64} height={64} className="size-16 rounded-lg object-cover" /> : <span className="flex size-16 items-center justify-center rounded-lg bg-[#fafafa]"><Image src="/credit-analyst/icons/file.svg" alt="" width={22} height={22} /></span>}<div className="ml-3 min-w-0 flex-1"><p className="truncate text-sm font-medium text-[#404040]">{picture.name}</p><p className={`mt-1 text-xs ${picture.uploadError ? "text-red-700" : "text-[#737373]"}`}>{picture.uploadError ? "Upload failed" : uploading ? "Uploading…" : picture.size}</p></div><button type="button" disabled={uploading} onClick={() => void previewPicture()} className="ml-2 text-sm font-semibold text-[#be123c] disabled:text-[#a3a3a3]">Preview ↗</button><button type="button" disabled={uploading} onClick={() => void removePicture()} aria-label="Remove 2x2 picture" className="ml-2 flex size-8 items-center justify-center"><Image src="/credit-analyst/icons/trash.svg" alt="" width={18} height={18} /></button></div> : <label className="flex min-h-[112px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#d4d4d4] text-center"><Image src="/credit-analyst/icons/camera.svg" alt="" width={22} height={22} /><span className="mt-2 text-sm font-semibold text-[#be123c]">Upload 2x2 picture</span><span className="mt-1 text-xs text-[#737373]">PNG or JPG (max. 5MB)</span><input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={event => { void selectPicture(event.target.files?.[0]); event.target.value = ""; }} /></label>}{error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}</div>;
 }
 
 function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview }: { initialDraft?: ApplicationDraft | null; onCancel: () => void; onSaveDraft: (draft: DesktopDraftData) => void; onReview: (values: FormDataState) => void }) {
   const [showAddField, setShowAddField] = useState(false);
+  const [confirmationAction, setConfirmationAction] = useState<"cancel" | "save-draft">();
   const [schedulePage, setSchedulePage] = useState(1);
   const [values, setValues] = useState<FormDataState>(initialDraft?.formData ?? {});
   const [loanAmount, setLoanAmount] = useState(initialDraft?.formData.loan?.["Loan amount"] ?? "");
@@ -447,7 +601,7 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
     },
     __children: encodedRows(desktopChildren),
     __businesses: encodedRows(desktopBusinesses),
-    __documents: encodedRows(desktopDocuments.map(({ name, size }) => ({ name, size }))),
+    __documents: encodedRows(desktopDocuments.map(({ name, size, path }) => ({ name, size, ...(path ? { path } : {}) }))),
     __custom: customFieldValues,
   });
 
@@ -458,6 +612,7 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
           <section key={section.id} className="mb-8">
             <h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase tracking-wide text-[#525252]">{section.title}</h2>
             <div className="mt-6">
+              {section.id === "personal" && <div className="mb-6 max-w-[512px]"><PhotoUpload value={values.personal?.__picture} onChange={value => updateValue("personal", "__picture", value)} /></div>}
               {section.id === "documents" ? (
                 <><Documents initialFiles={desktopDocuments} onFilesChange={setDesktopDocuments} onAddField={() => setShowAddField(true)} />{customFields.map((fieldId, index) => { const label = `Additional field ${index + 1}`; return <div key={fieldId} className="mt-6 flex items-end gap-3"><div className="flex-1"><FormField label={label} textarea value={customFieldValues[label] ?? ""} onValueChange={value => setCustomFieldValues(current => ({ ...current, [label]: value }))} /></div><button type="button" onClick={() => { setCustomFields(current => current.filter(id => id !== fieldId)); setCustomFieldValues(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== label))); }} className="mb-2 flex size-8 items-center justify-center rounded-md hover:bg-[#fafafa]" aria-label={`Delete additional field ${index + 1}`}><Image src="/credit-analyst/icons/trash.svg" alt="" width={20} height={20} /></button></div>; })}</>
               ) : section.id === "cashflow" ? (
@@ -466,7 +621,7 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
                 <div className={`grid gap-x-6 gap-y-6 ${section.id === "personal" ? "grid-cols-12" : section.id === "business" || section.id === "relative" ? "grid-cols-2" : "grid-cols-3"}`}>
                   {section.fields?.filter(field => section.id !== "business" && !(section.id === "personal" && ["Contact number", "Email / Facebook address"].includes(field))).map(field => (
                     <div key={field} className={section.id === "personal" ? field === "Permanent address" ? "col-span-12" : ["Barangay", "City/Town", "ZIP code", "Region"].includes(field) ? "col-span-3" : ["Contact number", "Email / Facebook address"].includes(field) ? "col-span-6" : "col-span-4" : section.id === "relative" && field === "Address" ? "col-span-2" : section.id === "other" ? "col-span-3" : ""}>
-                      <FormField label={field} textarea={field.toLowerCase().includes("properties")} value={values[section.id]?.[field] ?? ""} readOnly={section.id === "personal" && field === "Age"} onValueChange={value => { updateValue(section.id, field, value); if (section.id === "loan" && field === "Loan amount") { setLoanAmount(value); setSchedulePage(1); } if (section.id === "loan" && field === "Term") { setLoanTerm(value); setSchedulePage(1); } }} />
+                      <FormField label={field} textarea={field.toLowerCase().includes("properties")} value={values[section.id]?.[field] ?? ""} readOnly={section.id === "personal" && field === "Age"} required={section.id !== "household" || values.personal?.["Civil status"] === "Married"} minimumAge={(section.id === "personal" && ["Date of birth", "Age"].includes(field)) || (section.id === "household" && field === "Age") ? 18 : undefined} onValueChange={value => { updateValue(section.id, field, value); if (section.id === "loan" && field === "Loan amount") { setLoanAmount(value); setSchedulePage(1); } if (section.id === "loan" && field === "Term") { setLoanTerm(value); setSchedulePage(1); } }} />
                     </div>
                   ))}
                 </div>
@@ -491,12 +646,24 @@ function DesktopApplicationForm({ initialDraft, onCancel, onSaveDraft, onReview 
         </section>
 
         <div className="sticky bottom-0 -mx-6 mt-8 flex items-center justify-end gap-3 border-t border-[#e5e5e5] bg-white px-6 py-4">
-          <button type="button" onClick={onCancel} className={secondaryButton}>Cancel</button>
-          <button type="button" onClick={() => onSaveDraft({ formData: completedValues(), desktopChildren, desktopBusinesses, desktopDocuments, customFields })} className={secondaryButton}>Save draft</button>
-          <button type="submit" className={primaryButton}>Submit Application</button>
+          <button type="button" onClick={() => setConfirmationAction("cancel")} className={secondaryButton}>Cancel</button>
+          <button type="button" onClick={() => setConfirmationAction("save-draft")} className={secondaryButton}>Save draft</button>
+          <button type="submit" className={primaryButton}>Finish Application</button>
         </div>
       </div>
       {showAddField && <Modal title="Add field" onClose={() => setShowAddField(false)}><p className="mb-4 text-sm text-[#525252]">Choose what you&apos;d like to add to this application.</p><button type="button" onClick={() => { setCustomFields(current => [...current, Date.now()]); setShowAddField(false); }} className="w-full rounded-xl border border-[#d4d4d4] p-4 text-left text-sm"><strong className="block">Text area</strong><span className="mt-1 block text-[#525252]">Add a note or remark about this submission</span></button></Modal>}
+      {confirmationAction && <SubmitConfirmationModal
+        title={confirmationAction === "save-draft" ? "Save this draft?" : "Cancel this application?"}
+        description={confirmationAction === "save-draft" ? "Your progress will be saved on this device so you can continue the application later." : "Any changes that have not been saved as a draft will be lost."}
+        confirmLabel={confirmationAction === "save-draft" ? "Save draft" : "Cancel application"}
+        onCancel={() => setConfirmationAction(undefined)}
+        onConfirm={() => {
+          const action = confirmationAction;
+          setConfirmationAction(undefined);
+          if (action === "save-draft") onSaveDraft({ formData: completedValues(), desktopChildren, desktopBusinesses, desktopDocuments, customFields });
+          else onCancel();
+        }}
+      />}
     </form>
   );
 }
@@ -509,6 +676,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [pendingForm, setPendingForm] = useState<ApplicationFormData>();
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const updateValue = (label: string, value: string) => setValues(current => ({ ...current, [label]: value, ...(label === "Date of birth" ? { Age: calculateAge(value) } : {}) }));
   const changeChildrenCount = (value: string) => {
     const count = Math.min(20, Math.max(0, Math.floor(numericValue(value))));
@@ -518,7 +686,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
   const updateChild = (row: number, field: string, value: string) => setChildren(current => current.map((child, index) => index === row ? { ...child, [field]: value, ...(field === "Birthday" ? { Age: calculateAge(value) } : {}) } : child));
   const updateBusiness = (row: number, field: string, value: string) => setBusinesses(current => current.map((business, index) => index === row ? { ...business, [field]: value } : business));
   const sectionTitle = (title: string) => <h2 className="border-b border-[#e5e5e5] pb-2 text-sm font-semibold uppercase leading-5 text-[#404040]">{title}</h2>;
-  const field = (label: string, className = "") => <div className={className}><FormField label={label} value={values[label] ?? ""} readOnly={label === "Age"} textarea={label === "Overall remarks"} onValueChange={value => updateValue(label, value)} /></div>;
+  const field = (label: string, className = "") => <div className={className}><FormField label={label} value={values[label] ?? ""} readOnly={label === "Age"} textarea={label === "Overall remarks"} minimumAge={["Date of birth", "Age"].includes(label) ? 18 : undefined} onValueChange={value => updateValue(label, value)} /></div>;
   return (
     <form onSubmit={(event) => {
       event.preventDefault();
@@ -532,7 +700,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
       const personalFields = ["Full name", "Date of birth", "Civil status", "Citizenship", "Gender", "Place of birth", "Contact number", "Email / Facebook address", "Relationship to borrower"];
       const addressFields = ["Home address", "Home barangay", "Home city/town", "Home ZIP code", "Home region", "Provincial address", "Provincial barangay", "Provincial city/town", "Provincial ZIP code", "Provincial region", "Present address"];
       setPendingForm({
-        "co-personal": Object.fromEntries(personalFields.map(label => [label, submittedValues[label] ?? ""])),
+        "co-personal": { ...Object.fromEntries(personalFields.map(label => [label, submittedValues[label] ?? ""])), __picture: submittedValues.__picture ?? "" },
         "co-address": Object.fromEntries(addressFields.map(label => [label, submittedValues[label] ?? ""])),
         "co-household": { "Number of children": childrenCount },
         "co-business": { "Gross monthly income": submittedValues["Gross monthly income"] ?? "" },
@@ -554,6 +722,7 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
 
         <section className="mt-6">
           {sectionTitle("Co-maker personal information")}
+          <div className="mt-6 max-w-[512px]"><PhotoUpload value={values.__picture} onChange={value => updateValue("__picture", value)} /></div>
           <div className="mt-6 grid grid-cols-3 gap-6">
             {field("Full name", "col-span-3")}
             {field("Age")}{field("Civil status")}{field("Date of birth")}
@@ -588,8 +757,8 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
 
         <div className="sticky bottom-0 -mx-6 mt-8 flex items-center justify-end gap-3 border-t border-[#e5e5e5] bg-white px-6 py-4">
           {error && <p role="alert" className="mr-auto text-sm text-red-700">{error}</p>}
-          <button type="button" onClick={onCancel} className={secondaryButton}>Cancel</button>
-          <button disabled={pending} type="submit" className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Saving…" : "Save co-borrower"}</button>
+          <button type="button" onClick={() => setShowCancelConfirmation(true)} className={secondaryButton}>Cancel</button>
+          <button disabled={pending} type="submit" className={`${primaryButton} disabled:cursor-not-allowed disabled:opacity-60`}>{pending ? "Saving…" : "Submit Application"}</button>
         </div>
       </div>
       {pendingForm && <SubmitConfirmationModal
@@ -607,6 +776,16 @@ function DesktopCoMakerForm({ loan, onCancel, onSave }: { loan: Submission; onCa
             setError(message);
             setPendingForm(undefined);
           }
+        }}
+      />}
+      {showCancelConfirmation && <SubmitConfirmationModal
+        title="Cancel this co-maker form?"
+        description="The co-maker details entered on this form will be lost."
+        confirmLabel="Cancel form"
+        onCancel={() => setShowCancelConfirmation(false)}
+        onConfirm={() => {
+          setShowCancelConfirmation(false);
+          onCancel();
         }}
       />}
     </form>
@@ -643,8 +822,46 @@ function ReadOnlyTable({ columns, rows, empty }: { columns: string[]; rows: Reco
   return rows.length ? <div className="overflow-x-auto rounded-xl border border-[#e5e5e5]"><table className="w-full min-w-[720px] text-left text-sm"><thead className="h-11 bg-[#fafafa] text-xs font-semibold uppercase text-[#737373]"><tr>{columns.map(column => <th key={column} className="px-6">{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="h-[64px] border-t border-[#e5e5e5]">{columns.map(column => <td key={column} className="px-6 text-[#525252]">{row[column] || "Not provided"}</td>)}</tr>)}</tbody></table></div> : <p className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#737373]">{empty}</p>;
 }
 
-function ReadOnlyDocuments({ files }: { files: { name: string; size: string }[] }) {
-  return files.length ? <div className="grid gap-3">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex min-h-[72px] items-center rounded-xl border border-[#e5e5e5] px-4"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} /><div className="ml-3"><p className="text-sm font-medium text-[#404040]">{file.name}</p><p className="text-sm text-[#737373]">{file.size} · Uploaded with application</p></div></div>)}</div> : <p className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#737373]">No supporting documents were attached.</p>;
+function ReadOnlyDocument({ file }: { file: { name: string; size: string; path?: string } }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const openDocument = async () => {
+    if (!file.path || pending) return;
+    const preview = window.open("about:blank", "_blank");
+    if (preview) preview.opener = null;
+    setPending(true);
+    setError("");
+    const result = await createLoanDocumentViewUrl(file.path);
+    setPending(false);
+    if (!result.ok) {
+      preview?.close();
+      setError(result.error);
+      return;
+    }
+    if (preview) preview.location.href = result.url;
+    else window.open(result.url, "_blank", "noopener,noreferrer");
+  };
+  return <div><button type="button" disabled={!file.path || pending} onClick={() => void openDocument()} className="flex min-h-[72px] w-full items-center rounded-xl border border-[#e5e5e5] px-4 text-left enabled:hover:border-[#fda4af] enabled:hover:bg-[#fff1f2] disabled:cursor-default"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} /><div className="ml-3 min-w-0 flex-1"><p className="truncate text-sm font-medium text-[#404040]">{file.name}</p><p className="text-sm text-[#737373]">{file.size} · {pending ? "Opening…" : file.path ? "Open in new tab" : "Preview unavailable for older uploads"}</p></div>{file.path && <span aria-hidden className="ml-3 text-lg text-[#be123c]">↗</span>}</button>{error && <p role="alert" className="mt-1 text-sm text-red-700">{error}</p>}</div>;
+}
+
+function ReadOnlyDocuments({ files }: { files: { name: string; size: string; path?: string }[] }) {
+  return files.length ? <div className="grid gap-3">{files.map((file, index) => <ReadOnlyDocument key={`${file.name}-${file.path ?? index}`} file={file} />)}</div> : <p className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#737373]">No supporting documents were attached.</p>;
+}
+
+function ReadOnlyIdPicture({ picture }: { picture?: { name: string; size: string; path: string } }) {
+  if (!picture) return null;
+  return <div className="mb-6 max-w-[512px]"><p className="mb-2 text-xs font-semibold uppercase text-[#404040]">2x2 picture</p><ReadOnlyDocument file={picture} /></div>;
+}
+
+function ReadOnlyAdditionalFields({ fields = {} }: { fields?: Record<string, string> }) {
+  const entries = Object.entries(fields);
+  if (!entries.length) return null;
+  return <div className="mt-6 grid gap-4">
+    {entries.map(([label, value]) => <div key={label}>
+      <p className="text-xs font-semibold uppercase leading-[18px] text-[#404040]">{label}</p>
+      <div className="mt-1.5 min-h-24 whitespace-pre-wrap rounded-lg border border-[#d4d4d4] bg-[#fafafa] px-3 py-3 text-sm leading-6 text-[#525252] shadow-[0_1px_1px_rgba(0,0,0,0.05)]">{value || "Not provided"}</div>
+    </div>)}
+  </div>;
 }
 
 function CoMakerDetailsView({ loan, onBack }: { loan: Submission; onBack: () => void }) {
@@ -672,6 +889,7 @@ function CoMakerDetailsView({ loan, onBack }: { loan: Submission; onBack: () => 
             </ReadOnlySection>
 
             <ReadOnlySection title="Co-maker personal information">
+              <ReadOnlyIdPicture picture={coMaker.idPicture} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
                 <ReadOnlyField label="Full name" value={coMaker.fullName} className="sm:col-span-2 lg:col-span-3" />
                 <ReadOnlyField label="Age" value={coMaker.dateOfBirth ? calculateAge(coMaker.dateOfBirth) : "Not provided"} />
@@ -732,6 +950,18 @@ function CoMakerDetailsView({ loan, onBack }: { loan: Submission; onBack: () => 
   );
 }
 
+function RejectionNotice({ loan }: { loan: Submission }) {
+  if (loan.status !== "Rejected") return null;
+  return <div role="alert" className="mt-3 flex items-start gap-3 rounded-lg border border-[#fca5a5] bg-[#fef2f2] px-4 py-3 text-[#b91c1c]">
+    <span aria-hidden className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-[#dc2626] text-xs font-bold">!</span>
+    <div className="min-w-0">
+      <p className="text-xs font-semibold uppercase tracking-wide">Reason for rejection</p>
+      <p className="mt-1 text-sm font-semibold leading-5">{loan.rejectionReason || "No rejection reason was provided."}</p>
+      {loan.rejectionAdditionalDetails && <p className="mt-1 text-sm leading-5">{loan.rejectionAdditionalDetails}</p>}
+    </div>
+  </div>;
+}
+
 function DesktopSubmissionView({ loan, onBack }: { loan: Submission; onBack: () => void }) {
   const [schedulePage, setSchedulePage] = useState(1);
   const fullSchedule = generatePaymentSchedule(loan.amount, loan.term);
@@ -744,10 +974,11 @@ function DesktopSubmissionView({ loan, onBack }: { loan: Submission; onBack: () 
       <button onClick={onBack} className="flex items-center gap-1 text-sm font-semibold text-[#525252]"><Image src="/credit-analyst/icons/arrow-left.svg" alt="" width={20} height={20} />Back to my submissions</button>
       <div className="mt-4 flex items-center gap-2"><h1 className="text-xl font-semibold leading-[30px] text-[#171717]">{loan.id} — {loan.name}</h1><StatusBadge status={loan.status} /></div>
       <p className="text-base leading-6 text-[#525252]">Submitted {loan.submitted} · Read-only — submitted applications cannot be edited.</p>
+      <RejectionNotice loan={loan} />
     </header>
     <div className="mx-auto mt-8 max-w-[1096px] rounded-xl border border-[#e5e5e5] bg-white p-6">
       <div className="space-y-8">
-        <ReadOnlySection title="Personal information"><div className="grid grid-cols-3 gap-x-6 gap-y-6">
+        <ReadOnlySection title="Personal information"><ReadOnlyIdPicture picture={details?.idPictures?.find(picture => picture.kind === "applicant_2x2")} /><div className="grid grid-cols-3 gap-x-6 gap-y-6">
           <ReadOnlyField label="Last name" value={display(details?.lastName)} /><ReadOnlyField label="First name" value={display(details?.firstName)} /><ReadOnlyField label="Middle name" value={display(details?.middleName)} />
           <ReadOnlyField label="Age" value={details?.dateOfBirth ? calculateAge(details.dateOfBirth) : "Not provided"} /><ReadOnlyField label="Civil status" value={display(details?.civilStatus)} /><ReadOnlyField label="Date of birth" value={display(details?.dateOfBirth)} />
           <ReadOnlyField label="Citizenship" value={display(details?.citizenship)} /><ReadOnlyField label="Gender" value={display(details?.gender)} /><ReadOnlyField label="Place of birth" value={display(details?.placeOfBirth)} />
@@ -763,7 +994,7 @@ function DesktopSubmissionView({ loan, onBack }: { loan: Submission; onBack: () 
         <ReadOnlySection title="Other information"><ReadOnlyField label="Real and personal properties owned" value={display(details?.realAndPersonalProperties)} className="[&>div]:h-[126px] [&>div]:items-start [&>div]:pt-3" /><fieldset className="mt-6"><legend className="text-xs font-semibold uppercase text-[#404040]">Health declaration</legend><div className="mt-2 flex gap-8 text-sm text-[#525252]">{["In good health", "Has pre-existing illness"].map(option => <label key={option} className="flex items-center gap-2"><input type="radio" checked={details?.healthDeclaration === option} readOnly className="accent-[#e11d48]" />{option}</label>)}</div></fieldset></ReadOnlySection>
         <ReadOnlySection title="Nearest relative to contact"><div className="grid grid-cols-2 gap-6"><ReadOnlyField label="Name" value={display(details?.relativeName)} /><ReadOnlyField label="Contact number" value={display(details?.relativeContactNumber)} /><ReadOnlyField label="Address" value={display(details?.relativeAddress)} className="col-span-2" /></div></ReadOnlySection>
         <ReadOnlySection title="Loan details"><div className="grid grid-cols-3 gap-6"><ReadOnlyField label="Loan product" value={loan.product || "Not provided"} /><ReadOnlyField label="Loan amount" value={loan.amount} /><ReadOnlyField label="Term" value={loan.term} /></div></ReadOnlySection>
-        <ReadOnlySection title="Supporting documents">{details?.supportingDocuments?.length ? <div className="space-y-3">{details.supportingDocuments.map((file, index) => <div key={`${file.name}-${index}`} className="flex h-[70px] items-center rounded-xl border border-[#e5e5e5] px-4"><Image src="/credit-analyst/icons/file.svg" alt="" width={20} height={20} /><div className="ml-3"><p className="text-sm font-medium text-[#404040]">{file.name}</p><p className="text-xs text-[#737373]">{file.size} · Uploaded {loan.submitted}</p></div></div>)}</div> : <p className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#737373]">No supporting documents were attached.</p>}</ReadOnlySection>
+        <ReadOnlySection title="Supporting documents"><ReadOnlyDocuments files={details?.supportingDocuments ?? []} /><ReadOnlyAdditionalFields fields={details?.additionalFields} /></ReadOnlySection>
         <ReadOnlySection title="Projected payment schedule"><div className="overflow-hidden rounded-lg border border-[#e5e5e5]"><table className="w-full table-fixed text-left text-sm"><colgroup><col className="w-[120px]" /><col /><col /></colgroup><thead className="h-11 bg-[#fafafa] text-xs font-semibold uppercase text-[#737373]"><tr><th className="px-6">Payment no.</th><th className="px-6">Due date</th><th className="px-6">Amount</th></tr></thead><tbody>{rows.map(row => <tr key={row.number} className="h-[72px] border-t border-[#e5e5e5] font-medium"><td className="px-6">{row.number}</td><td className="px-6">{row.date}</td><td className="px-6">{row.amount}</td></tr>)}</tbody></table><div className="flex h-16 items-center border-t border-[#e5e5e5] px-6 text-sm"><span>Page {schedulePage} of {schedulePageCount}</span><select className="ml-3 h-9 w-32 rounded-lg border border-[#d4d4d4] px-3"><option>10 per page</option></select><button type="button" disabled={schedulePage === 1} onClick={() => setSchedulePage(page => page - 1)} className={`${secondaryButton} ml-auto disabled:opacity-50`}>Previous</button><button type="button" disabled={schedulePage === schedulePageCount} onClick={() => setSchedulePage(page => page + 1)} className={`${secondaryButton} ml-3 disabled:opacity-50`}>Next</button></div></div></ReadOnlySection>
       </div>
       <div className="-mx-6 -mb-6 mt-6 flex h-[69px] items-center justify-end border-t border-[#e5e5e5] px-6"><button onClick={onBack} className={secondaryButton}>Back to my submissions</button></div>
@@ -791,13 +1022,14 @@ function SubmissionView({ loan, coMakerPending, onBack, onCoMaker }: { loan: Sub
     <div className="mx-auto w-full max-w-[1096px] px-4 pb-24 pt-6">
       <div className="mb-4 lg:hidden"><h2 className="text-lg font-semibold text-[#171717]">{loan.name}</h2><p className="text-xs text-[#737373]">{loan.amount} · {loan.product || "Loan"} · {loan.term}</p></div>
       <p className="rounded-lg bg-[#f5f5f5] px-3 py-2.5 text-xs leading-[18px] text-[#737373]">Submitted {loan.submitted} · Read-only — submitted applications cannot be edited.</p>
+      <RejectionNotice loan={loan} />
       <div className="mt-4 lg:mt-6 lg:rounded-xl lg:border lg:border-[#e5e5e5] lg:p-6">
         {sections.map(section => <section key={section.id} className="border-b border-[#e5e5e5] py-3 lg:mb-8 lg:border-0 lg:py-0"><button type="button" onClick={() => setExpanded(current => current === section.id ? "" : section.id)} className="flex w-full items-center text-left lg:pointer-events-none"><span className="min-w-0 flex-1"><span className="block text-sm font-semibold uppercase text-[#404040]">{section.title}</span><span className="block truncate text-xs text-[#737373] lg:hidden">{section.summary}</span></span><span className="text-base text-[#737373] lg:hidden">{expanded === section.id ? "−" : "+"}</span></button>
           <div className={`${expanded === section.id ? "block" : "hidden"} lg:block`}>
             {section.rows.length > 0 && <dl className="mt-3 grid gap-x-6 lg:grid-cols-3">{section.rows.map(([label, value]) => <div key={label} className="flex justify-between py-1.5 lg:block lg:py-3"><dt className="text-xs text-[#737373] lg:font-semibold lg:uppercase">{label}</dt><dd className="text-right text-sm font-medium text-[#171717] lg:mt-1 lg:text-left lg:text-base">{value}</dd></div>)}</dl>}
-            {section.id === "personal" && <div className="mt-3"><p className="mb-2 text-xs font-semibold uppercase text-[#525252]">Children</p><ReadOnlyTable columns={["Name", "School", "Grade/Course", "Birthday", "Age"]} rows={details?.children ?? []} empty="No children were added to this application." /></div>}
+            {section.id === "personal" && <div className="mt-3"><ReadOnlyIdPicture picture={details?.idPictures?.find(picture => picture.kind === "applicant_2x2")} /><p className="mb-2 text-xs font-semibold uppercase text-[#525252]">Children</p><ReadOnlyTable columns={["Name", "School", "Grade/Course", "Birthday", "Age"]} rows={details?.children ?? []} empty="No children were added to this application." /></div>}
             {section.id === "business" && <div className="mt-3"><ReadOnlyTable columns={["Business name", "Type", "Address", "Years"]} rows={details?.businesses ?? []} empty="No businesses were added to this application." /></div>}
-            {section.id === "documents" && <div className="mt-3"><ReadOnlyDocuments files={details?.supportingDocuments ?? []} /></div>}
+            {section.id === "documents" && <div className="mt-3"><ReadOnlyDocuments files={details?.supportingDocuments ?? []} /><ReadOnlyAdditionalFields fields={details?.additionalFields} /></div>}
             {section.id === "schedule" && <div className="mt-3">{schedule.length ? <><p className="text-[10px] font-semibold uppercase leading-[14px] text-[#737373]">Per payment</p><p className="text-2xl font-semibold leading-[30px]">{schedule[0].amount}</p><p className="text-xs leading-[18px] text-[#737373]">{schedule.length} payments · daily · {loan.amount} total</p><div className="mt-3 flex py-1.5 text-xs"><span className="text-[#737373]">First due</span><span className="ml-auto text-sm font-medium text-[#171717]">{schedule[0].date}</span></div><div className="flex py-1.5 text-xs"><span className="text-[#737373]">Final due</span><span className="ml-auto text-sm font-medium text-[#171717]">{schedule[schedule.length - 1].date}</span></div><button type="button" onClick={() => setShowMobilePayments(current => !current)} className="mt-3 text-sm font-semibold leading-5 text-[#be123c]">{showMobilePayments ? "Hide payments" : `Show all ${schedule.length} payments`}</button>{showMobilePayments && <div className="mt-3 overflow-hidden rounded-lg border border-[#e5e5e5]">{schedule.map(row => <div key={row.number} className="flex min-h-12 items-center border-b border-[#e5e5e5] px-3 py-2 text-sm last:border-b-0"><span className="w-9 shrink-0 text-xs font-semibold text-[#737373]">{row.number}</span><span className="text-[#525252]">{row.date}</span><span className="ml-auto font-medium text-[#171717]">{row.amount}</span></div>)}</div>}</> : <p className="text-sm text-[#737373]">Payment schedule unavailable.</p>}</div>}
           </div>
         </section>)}
@@ -853,6 +1085,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   const [coMakerLoadingLoanId, setCoMakerLoadingLoanId] = useState<string>();
   const [coMakerLoadError, setCoMakerLoadError] = useState("");
   const [showMobileCoMakerConfirmation, setShowMobileCoMakerConfirmation] = useState(false);
+  const [mobileConfirmationAction, setMobileConfirmationAction] = useState<"cancel-application" | "discard-application" | "save-draft" | "cancel-co-maker">();
   useEffect(() => {
     const loanIds = initialSubmissions.flatMap(loan =>
       loan.databaseId ? [loan.databaseId] : [],
@@ -995,7 +1228,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
     if (submitting) return;
     setSubmitting(true);
     setSubmitError("");
-    const mobileDocuments = decodedDocuments(applicationFormData.documents?.__files).map(({ name, size }) => ({ name, size }));
+    const mobileDocuments = decodedDocuments(applicationFormData.documents?.__files).map(({ name, size, path }) => ({ name, size, ...(path ? { path } : {}) }));
     const submissionData = {
       ...applicationFormData,
       personal: {
@@ -1063,7 +1296,7 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   const navProps = { active, mobileOpen: menuOpen, userProfile, onClose: () => setMenuOpen(false), onNavigate: navigate } as const;
   const reviewedChildren = decodedRows(applicationFormData.__children);
   const reviewedBusinesses = decodedRows(applicationFormData.__businesses);
-  const reviewedDocuments = decodedRows(applicationFormData.__documents).map(document => ({ name: document.name ?? "Document", size: document.size ?? "Unknown size", progress: 100 }));
+  const reviewedDocuments = decodedRows(applicationFormData.__documents).map(document => ({ name: document.name ?? "Document", size: document.size ?? "Unknown size", progress: 100, ...(document.path ? { path: document.path } : {}) }));
   const restoredApplication: ApplicationDraft = {
     version: 1,
     formData: applicationFormData,
@@ -1081,23 +1314,35 @@ export default function CreditAnalystApp({ userProfile, initialSubmissions, load
   let content: ReactNode;
   if (screen.type === "dashboard") content = <Dashboard submissions={submissions} loadError={loadError} coMakerLoadingLoanId={coMakerLoadingLoanId} draft={draft} onNew={startNewApplication} onResumeDraft={resumeDraft} onDiscardDraft={discardDraft} onView={loan => setScreen({ type: "submission", loan })} onCoMaker={loan => openCoMaker(loan, "dashboard")} />;
   else if (screen.type === "application") content = (
-    <PageShell title={[applicationFormData.personal?.["First name"], applicationFormData.personal?.["Last name"]].filter(Boolean).join(" ") || "New application"} desktopTitle="New loan application" supportingText="Fill in the client's details and submit for review." back={() => setScreen({ type: "dashboard" })} action={<button onClick={discardDraft} className="text-sm font-semibold text-[#be123c]">Discard</button>}>
+    <PageShell title={[applicationFormData.personal?.["First name"], applicationFormData.personal?.["Last name"]].filter(Boolean).join(" ") || "New application"} desktopTitle="New loan application" supportingText="Fill in the client's details and submit for review." back={() => setMobileConfirmationAction("cancel-application")} action={<button type="button" onClick={() => setMobileConfirmationAction("discard-application")} className="text-sm font-semibold text-[#be123c]">Discard</button>}>
       <div className="lg:hidden">
         <div className="px-4 pt-8"><div className="mx-auto max-w-3xl"><p className="text-sm font-semibold text-[#525252]">Not yet submitted · Saved on this device</p></div></div>
-        <Checklist sections={applicationSections} sectionData={applicationFormData} completedIds={completedApplicationSections} startedIds={startedApplicationSections} onSection={sectionId => setScreen({ type: "section", sectionId })} onSaveDraft={() => persistDraft()} onReview={() => setScreen({ type: "review" })} />
+        <Checklist sections={applicationSections} sectionData={applicationFormData} completedIds={completedApplicationSections} startedIds={startedApplicationSections} onSection={sectionId => setScreen({ type: "section", sectionId })} onSaveDraft={() => setMobileConfirmationAction("save-draft")} onReview={() => setScreen({ type: "review" })} />
       </div>
       <DesktopApplicationForm key="application-form" initialDraft={restoredApplication} onCancel={() => setScreen({ type: "dashboard" })} onSaveDraft={persistDraft} onReview={values => { setApplicationFormData(values); setSubmitError(""); setScreen({ type: "review" }); }} />
     </PageShell>
   );
-  else if (screen.type === "section") content = <SectionForm section={applicationSections.find(item => item.id === screen.sectionId)!} values={applicationFormData[screen.sectionId === "schedule" ? "loan" : screen.sectionId] ?? {}} childAdded={childAdded} childData={childData} businesses={businesses} onFieldChange={(field, value) => { updateSectionData(setApplicationFormData, screen.sectionId, field, value); addToSet(setStartedApplicationSections, startedApplicationSections, screen.sectionId); }} onBack={() => setScreen({ type: "application" })} onDone={() => { addToSet(setCompletedApplicationSections, completedApplicationSections, screen.sectionId); setScreen({ type: "application" }); }} onChild={() => setScreen({ type: "child" })} onBusiness={businessIndex => setScreen({ type: "business", businessIndex })} />;
+  else if (screen.type === "section") content = <SectionForm section={applicationSections.find(item => item.id === screen.sectionId)!} values={applicationFormData[screen.sectionId === "schedule" ? "loan" : screen.sectionId] ?? {}} additionalFields={applicationFormData.__custom} childAdded={childAdded} childData={childData} businesses={businesses} spouseRequired={applicationFormData.personal?.["Civil status"] === "Married"} onFieldChange={(field, value) => { updateSectionData(setApplicationFormData, screen.sectionId, field, value); addToSet(setStartedApplicationSections, startedApplicationSections, screen.sectionId); }} onAdditionalFieldsChange={fields => { setApplicationFormData(current => ({ ...current, __custom: fields })); addToSet(setStartedApplicationSections, startedApplicationSections, "documents"); }} onBack={() => setScreen({ type: "application" })} onDone={() => { addToSet(setCompletedApplicationSections, completedApplicationSections, screen.sectionId); setScreen({ type: "application" }); }} onChild={() => setScreen({ type: "child" })} onBusiness={businessIndex => setScreen({ type: "business", businessIndex })} />;
   else if (screen.type === "child") content = <ChildForm values={childData} onFieldChange={(field, value) => setChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "section", sectionId: "personal" })} onDone={() => { setChildAdded(true); setScreen({ type: "section", sectionId: "personal" }); }} />;
   else if (screen.type === "business") { const businessIndex = screen.businessIndex; content = <BusinessForm number={(businessIndex ?? businesses.length) + 1} values={businessIndex === undefined ? {} : businesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "section", sectionId: "business" })} onRemove={() => { if (businessIndex !== undefined) setBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "section", sectionId: "business" }); }} onSave={business => { setBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedApplicationSections, startedApplicationSections, "business"); setScreen({ type: "section", sectionId: "business" }); }} />; }
   else if (screen.type === "review") content = <Review values={applicationFormData} error={submitError} pending={submitting} onBack={() => setScreen({ type: "application" })} onSubmit={submitApplication} />;
   else if (screen.type === "co-maker-view") content = <CoMakerDetailsView loan={screen.loan} onBack={() => setScreen(screen.returnTo === "submission" ? { type: "submission", loan: screen.loan } : { type: "dashboard" })} />;
-  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setScreen({ type: "dashboard" })} action={<button onClick={() => setScreen({ type: "dashboard" })} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} error={coMakerError} pending={coMakerSubmitting} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => setShowMobileCoMakerConfirmation(true)} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={form => submitCoMaker(screen.loan, form)} />{showMobileCoMakerConfirmation && <SubmitConfirmationModal title="Add this co-maker?" description={`This will add the co-maker to ${screen.loan.id} — ${screen.loan.name}. The saved co-maker details will be read-only. This cannot be undone.`} confirmLabel="Add co-maker" pending={coMakerSubmitting} onCancel={() => setShowMobileCoMakerConfirmation(false)} onConfirm={() => { setShowMobileCoMakerConfirmation(false); void submitCoMaker(screen.loan, { ...coMakerFormData, __children: encodedRows(Object.keys(coMakerChildData).length ? [coMakerChildData] : []), __businesses: encodedRows(coBorrowerBusinesses) }); }} />}</PageShell>;
+  else if (screen.type === "co-maker") content = <PageShell title="Add co-maker" desktopTitle="Add co-maker" supportingText="Fill in the co-maker's details for this loan application." back={() => setMobileConfirmationAction("cancel-co-maker")} action={<button type="button" onClick={() => setMobileConfirmationAction("cancel-co-maker")} className="text-sm font-semibold text-[#be123c]">Cancel</button>}><div className="lg:hidden"><Checklist coMaker sections={coMakerSections} sectionData={coMakerFormData} completedIds={completedCoMakerSections} startedIds={startedCoMakerSections} error={coMakerError} pending={coMakerSubmitting} onSection={sectionId => setScreen({ type: "co-section", sectionId, loan: screen.loan })} onReview={() => setShowMobileCoMakerConfirmation(true)} /></div><DesktopCoMakerForm loan={screen.loan} onCancel={() => setScreen({ type: "dashboard" })} onSave={form => submitCoMaker(screen.loan, form)} />{showMobileCoMakerConfirmation && <SubmitConfirmationModal title="Add this co-maker?" description={`This will add the co-maker to ${screen.loan.id} — ${screen.loan.name}. The saved co-maker details will be read-only. This cannot be undone.`} confirmLabel="Add co-maker" pending={coMakerSubmitting} onCancel={() => setShowMobileCoMakerConfirmation(false)} onConfirm={() => { setShowMobileCoMakerConfirmation(false); void submitCoMaker(screen.loan, { ...coMakerFormData, __children: encodedRows(Object.keys(coMakerChildData).length ? [coMakerChildData] : []), __businesses: encodedRows(coBorrowerBusinesses) }); }} />}</PageShell>;
   else if (screen.type === "co-section") content = <SectionForm section={coMakerSections.find(item => item.id === screen.sectionId)!} values={coMakerFormData[screen.sectionId] ?? {}} businesses={coBorrowerBusinesses} onFieldChange={(field, value) => { updateSectionData(setCoMakerFormData, screen.sectionId, field, value); addToSet(setStartedCoMakerSections, startedCoMakerSections, screen.sectionId); }} onBack={() => setScreen({ type: "co-maker", loan: screen.loan })} onDone={() => { addToSet(setCompletedCoMakerSections, completedCoMakerSections, screen.sectionId); setScreen({ type: "co-maker", loan: screen.loan }); }} onChild={() => setScreen({ type: "co-child", loan: screen.loan })} onBusiness={businessIndex => setScreen({ type: "co-business-entry", businessIndex, loan: screen.loan })} />;
   else if (screen.type === "co-child") content = <ChildForm values={coMakerChildData} onFieldChange={(field, value) => setCoMakerChildData(current => ({ ...current, [field]: value }))} onBack={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} onDone={() => setScreen({ type: "co-section", sectionId: "co-household", loan: screen.loan })} />;
   else if (screen.type === "co-business-entry") { const businessIndex = screen.businessIndex; const loan = screen.loan; content = <BusinessForm number={(businessIndex ?? coBorrowerBusinesses.length) + 1} values={businessIndex === undefined ? {} : coBorrowerBusinesses[businessIndex] ?? {}} onBack={() => setScreen({ type: "co-section", sectionId: "co-business", loan })} onRemove={() => { if (businessIndex !== undefined) setCoBorrowerBusinesses(current => current.filter((_, index) => index !== businessIndex)); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} onSave={business => { setCoBorrowerBusinesses(current => businessIndex === undefined ? [...current, business] : current.map((item, index) => index === businessIndex ? business : item)); addToSet(setStartedCoMakerSections, startedCoMakerSections, "co-business"); setScreen({ type: "co-section", sectionId: "co-business", loan }); }} />; }
   else content = <SubmissionView loan={screen.loan} coMakerPending={coMakerLoadingLoanId === screen.loan.id} onBack={() => setScreen({ type: "dashboard" })} onCoMaker={() => openCoMaker(screen.loan, "submission")} />;
-  return <div className="min-h-screen bg-white text-[#171717]"><DesktopNavigation {...navProps} /><MobileHeader onOpen={() => setMenuOpen(true)} /><MobileNavigation {...navProps} /><div className="lg:pl-[280px]">{coMakerLoadError && <div role="alert" className="mx-4 mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 lg:mx-8"><span className="flex-1">{coMakerLoadError}</span><button type="button" onClick={() => setCoMakerLoadError("")} className="font-semibold">Dismiss</button></div>}{content}</div></div>;
+  return <div className="min-h-screen bg-white text-[#171717]"><DesktopNavigation {...navProps} /><MobileHeader onOpen={() => setMenuOpen(true)} /><MobileNavigation {...navProps} /><div className="lg:pl-[280px]">{coMakerLoadError && <div role="alert" className="mx-4 mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 lg:mx-8"><span className="flex-1">{coMakerLoadError}</span><button type="button" onClick={() => setCoMakerLoadError("")} className="font-semibold">Dismiss</button></div>}{content}</div>{mobileConfirmationAction && <SubmitConfirmationModal
+    title={mobileConfirmationAction === "save-draft" ? "Save this draft?" : mobileConfirmationAction === "discard-application" ? "Discard this application?" : mobileConfirmationAction === "cancel-co-maker" ? "Cancel this co-maker form?" : "Cancel this application?"}
+    description={mobileConfirmationAction === "save-draft" ? "Your progress will be saved on this device so you can continue the application later." : mobileConfirmationAction === "discard-application" ? "The saved draft and any unsaved changes will be permanently removed." : mobileConfirmationAction === "cancel-co-maker" ? "The co-maker details entered on this form will be lost." : "Any changes that have not been saved as a draft will be lost."}
+    confirmLabel={mobileConfirmationAction === "save-draft" ? "Save draft" : mobileConfirmationAction === "discard-application" ? "Discard application" : mobileConfirmationAction === "cancel-co-maker" ? "Cancel form" : "Cancel application"}
+    onCancel={() => setMobileConfirmationAction(undefined)}
+    onConfirm={() => {
+      const action = mobileConfirmationAction;
+      setMobileConfirmationAction(undefined);
+      if (action === "save-draft") persistDraft();
+      else if (action === "discard-application") discardDraft();
+      else setScreen({ type: "dashboard" });
+    }}
+  />}</div>;
 }

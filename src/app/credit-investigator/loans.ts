@@ -1,4 +1,4 @@
-import type { Submission } from "../credit-analyst/data";
+import type { CoMakerDetails, Submission } from "../credit-analyst/data";
 import type { AnalysisData, AnalysisPage } from "./analysis-pages";
 import {
   loanColumns,
@@ -42,10 +42,12 @@ export type InvestigatorLoan = {
   product?: string;
   term: string;
   details?: Submission["details"];
+  coMaker?: CoMakerDetails;
   recommendedAmount?: string;
   investigationId?: string;
   analysisData?: AnalysisData;
   completedAnalyses?: AnalysisPage[];
+  investigationReportSubmittedAt?: string;
   surrenderedItems?: SurrenderedItem[];
 };
 
@@ -107,6 +109,7 @@ const collateralAges: Record<string, string> = {
 
 export function loanRowToInvestigatorLoan(
   row: InvestigatorLoanRow,
+  coMaker?: CoMakerDetails,
 ): InvestigatorLoan {
   const submission = loanRowToSubmission(row);
   const claimStatus = normalizeClaimStatus(row.claim_status);
@@ -125,6 +128,10 @@ export function loanRowToInvestigatorLoan(
     product: submission.product,
     term: submission.term,
     details: submission.details,
+    coMaker: coMaker ? {
+      ...coMaker,
+      idPicture: submission.details?.idPictures?.find(picture => picture.kind === "co_maker_2x2"),
+    } : undefined,
     recommendedAmount: text(row.recommended_amount),
     analysisData: {
       recommendedAmount: text(row.recommended_amount),
@@ -157,6 +164,7 @@ export function attachInvestigation(
   return {
     ...loan,
     investigationId: investigation.id,
+    investigationReportSubmittedAt: investigation.investigation_report_submited_date || undefined,
     completedAnalyses,
     surrenderedItems: records(investigation.surrendered_items).map(item => ({
       description: text(item.item_description ?? item.description),

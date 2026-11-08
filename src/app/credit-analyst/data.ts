@@ -34,6 +34,14 @@ export type CoMakerDetails = {
   businesses: Record<string, string>[];
   grossMonthlyIncome?: string;
   overallRemarks?: string;
+  idPicture?: IdPictureMetadata;
+};
+
+export type IdPictureMetadata = {
+  kind: "applicant_2x2" | "co_maker_2x2";
+  name: string;
+  size: string;
+  path: string;
 };
 
 export type Submission = {
@@ -45,6 +53,8 @@ export type Submission = {
   product?: string;
   submitted: string;
   status: SubmissionStatus;
+  rejectionReason?: string;
+  rejectionAdditionalDetails?: string;
   hasCoMaker?: boolean;
   coMaker?: CoMakerDetails;
   details?: {
@@ -80,8 +90,9 @@ export type Submission = {
     realAndPersonalProperties?: string;
     healthDeclaration?: string;
     cashFlow?: Record<string, string>;
-    supportingDocuments?: { name: string; size: string }[];
+    supportingDocuments?: { name: string; size: string; path?: string }[];
     additionalFields?: Record<string, string>;
+    idPictures?: IdPictureMetadata[];
   };
 };
 

@@ -50,6 +50,12 @@ export type SaveInvestigationReportResult =
   | { success: true; investigationId: string }
   | { success: false; error: string };
 
+export type LoanDocumentUrlResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
+
+const loanDocumentBucket = "loan-application-documents";
+
 const collateralAgeRules: Record<
   string,
   { ageRange: string; ratePercentage: number }
@@ -85,6 +91,25 @@ function safeFileName(name: string, contentType: string) {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120);
   const base = cleaned || `attestation${extension}`;
   return /\.(png|jpe?g)$/i.test(base) ? base : `${base}${extension}`;
+}
+
+export async function createLoanDocumentViewUrl(
+  path: string,
+): Promise<LoanDocumentUrlResult> {
+  const { supabase } = await requireUserRole("Credit Investigator");
+  if (!path || path.startsWith("/") || path.includes("..")) {
+    return { ok: false, error: "This document link is invalid." };
+  }
+
+  const { data, error } = await supabase.storage
+    .from(loanDocumentBucket)
+    .createSignedUrl(path, 60);
+  if (error || !data?.signedUrl) {
+    console.error("[credit-investigator] Unable to create loan document URL", error);
+    return { ok: false, error: "The document could not be opened. Please try again." };
+  }
+
+  return { ok: true, url: data.signedUrl };
 }
 
 export async function rejectCreditInvestigation(

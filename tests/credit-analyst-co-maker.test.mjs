@@ -96,6 +96,166 @@ test("credit analyst confirms irreversible submissions with action-specific copy
   assert.match(source, /bg-\[#0a0a0a\]\/70/);
 });
 
+test("application forms enforce adult ages while exempting child birthdays", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /function latestBirthDate\(minimumAge/);
+  assert.match(source, /minimumAge=\{\["Date of birth", "Age"\]\.includes\(label\) \? 18 : undefined\}/);
+  assert.match(source, /max=\{new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\}/);
+  assert.match(actions, /The applicant must be at least 18 years old\./);
+  assert.match(actions, /The co-maker must be at least 18 years old\./);
+});
+
+test("spouse details are required only for married applicants", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /required=\{section\.id !== "household" \|\| values\.personal\?\.\["Civil status"\] === "Married"\}/);
+  assert.match(source, /spouseRequired=\{applicationFormData\.personal\?\.\["Civil status"\] === "Married"\}/);
+  assert.match(actions, /Complete all spouse details for a married applicant\./);
+});
+
+test("draft and cancel actions require confirmation", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /title=\{confirmationAction === "save-draft" \? "Save this draft\?" : "Cancel this application\?"\}/);
+  assert.match(source, /title="Cancel this co-maker form\?"/);
+  assert.match(source, /"discard-application" \? "Discard this application\?"/);
+});
+
+test("submitted application documents open through signed private URLs", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20261106051143_create_loan_application_documents_bucket.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(source, /createLoanDocumentViewUrl\(file\.path\)/);
+  assert.match(source, /Open in new tab/);
+  assert.match(actions, /\.createSignedUrl\(path, 60\)/);
+  assert.match(actions, /export async function uploadLoanDocument/);
+  assert.match(migration, /'loan-application-documents'/);
+  assert.match(migration, /for insert\s+to authenticated/);
+  assert.match(migration, /for select\s+to authenticated/);
+});
+
+test("new application attachments can be previewed before submission", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /URL\.createObjectURL\(file\)/);
+  assert.match(source, /Preview ↗/);
+  assert.match(source, /window\.open\(file\.previewUrl, "_blank", "noopener,noreferrer"\)/);
+  assert.match(source, /URL\.revokeObjectURL\(file\.previewUrl\)/);
+  assert.match(actions, /error\.statusCode === "404"/);
+  assert.match(actions, /Document storage is not configured yet/);
+});
+
+test("application and co-maker 2x2 pictures upload, persist, and preview", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20261107143500_allow_credit_analysts_update_loan_id_pictures.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /function PhotoUpload/);
+  assert.match(source, /uploadLoanIdPicture\(formData\)/);
+  assert.match(source, /2x2 picture/);
+  assert.match(source, /values\.personal\?\.__picture/);
+  assert.match(source, /submittedValues\.__picture/);
+  assert.match(source, /function ReadOnlyIdPicture/);
+  assert.match(source, /kind === "applicant_2x2"/);
+  assert.match(source, /picture=\{coMaker\.idPicture\}/);
+  assert.match(actions, /idPictureFromSection\(personal, "applicant_2x2"\)/);
+  assert.match(actions, /idPictureFromSection\(personal, "co_maker_2x2"\)/);
+  assert.match(actions, /id_pictures: JSON\.stringify/);
+  assert.match(actions, /\.update\(\{ id_pictures:/);
+  assert.match(migration, /grant update \(id_pictures\) on table public\.loans to authenticated/);
+  assert.match(migration, /status = 'pending'/);
+  assert.match(migration, /profile\.roles = 'Credit Analyst'/);
+});
+
+test("mobile additional fields are added to the same database payload as desktop fields", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /additionalFields=\{applicationFormData\.__custom\}/);
+  assert.match(source, /setApplicationFormData\(current => \(\{ \.\.\.current, __custom: fields \}\)\)/);
+  assert.match(source, /\[`Additional field \$\{fieldNumber\}`\]: ""/);
+  assert.match(actions, /additionalFields: form\.__custom \?\? \{\}/);
+});
+
+test("submitted application views display saved additional fields", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /function ReadOnlyAdditionalFields/);
+  assert.equal((source.match(/<ReadOnlyAdditionalFields fields=\{details\?\.additionalFields\} \/>/g) ?? []).length, 2);
+});
+
+test("rejected submission views show the stored rejection note in an error alert", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const loans = readFileSync(
+    new URL("../src/app/credit-analyst/loans.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(loans, /reason_for_rejection, rejection_additional_details/);
+  assert.match(source, /function RejectionNotice/);
+  assert.match(source, /loan\.status !== "Rejected"/);
+  assert.match(source, /Reason for rejection/);
+  assert.match(source, /border-\[#fca5a5\] bg-\[#fef2f2\].*text-\[#b91c1c\]/);
+  assert.equal((source.match(/<RejectionNotice loan=\{loan\} \/>/g) ?? []).length, 2);
+});
+
 test("co-maker lookup matches the selected loan database id", () => {
   const source = readFileSync(
     new URL("../src/app/credit-analyst/actions.ts", import.meta.url),

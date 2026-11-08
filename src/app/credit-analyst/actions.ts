@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUserRole } from "@/lib/supabase/require-user";
-import { loanColumns, loanRowToSubmission, type LoanRow } from "./loans";
-import type { CoMakerDetails, Submission } from "./data";
+import { idPictureDetails, loanColumns, loanRowToSubmission, type LoanRow } from "./loans";
+import type { CoMakerDetails, IdPictureMetadata, Submission } from "./data";
 import {
   coMakerColumns,
   coMakerRowToDetails,
@@ -28,6 +28,18 @@ export type GetCoMakerResult =
 export type GetCoMakersResult =
   | { ok: true; coMakers: Record<string, CoMakerDetails> }
   | { ok: false; error: string };
+
+export type LoanDocumentResult =
+  | { ok: true; document: { name: string; size: string; path: string } }
+  | { ok: false; error: string };
+
+export type LoanDocumentUrlResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string };
+
+const loanDocumentBucket = "loan-application-documents";
+const allowedLoanDocumentTypes = new Set(["application/pdf", "image/png", "image/jpeg"]);
+const allowedIdPictureTypes = new Set(["image/png", "image/jpeg"]);
 
 function cleanText(value: string | undefined) {
   const cleaned = value?.trim();
@@ -61,6 +73,26 @@ function invalidNumericValue(value: string | undefined) {
   return !/^\d+(?:\.\d+)?$/.test(normalized);
 }
 
+function isAtLeastAge(value: string | undefined, minimumAge: number) {
+  const match = value?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const [, yearValue, monthValue, dayValue] = match;
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const dateOfBirth = new Date(year, month - 1, day);
+  if (
+    dateOfBirth.getFullYear() !== year ||
+    dateOfBirth.getMonth() !== month - 1 ||
+    dateOfBirth.getDate() !== day
+  ) return false;
+
+  const latestAllowedBirthDate = new Date();
+  latestAllowedBirthDate.setHours(0, 0, 0, 0);
+  latestAllowedBirthDate.setFullYear(latestAllowedBirthDate.getFullYear() - minimumAge);
+  return dateOfBirth <= latestAllowedBirthDate;
+}
+
 function recordRows(section: Record<string, string> | undefined) {
   return Object.keys(section ?? {}).sort((left, right) => Number(left) - Number(right)).flatMap(key => {
     try {
@@ -70,6 +102,143 @@ function recordRows(section: Record<string, string> | undefined) {
       return [];
     }
   });
+}
+
+function idPictureFromSection(
+  section: Record<string, string> | undefined,
+  kind: IdPictureMetadata["kind"],
+): IdPictureMetadata | undefined {
+  try {
+    const picture = JSON.parse(section?.__picture ?? "");
+    if (
+      picture &&
+      typeof picture === "object" &&
+      !Array.isArray(picture) &&
+      typeof picture.name === "string" &&
+      typeof picture.size === "string" &&
+      typeof picture.path === "string"
+    ) {
+      return { kind, name: picture.name, size: picture.size, path: picture.path };
+    }
+  } catch {
+    // An empty or invalid client value is treated as no picture.
+  }
+  return undefined;
+}
+
+function displayFileSize(size: number) {
+  return size < 1024 * 1024
+    ? `${Math.max(1, Math.round(size / 1024))} KB`
+    : `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export async function uploadLoanDocument(formData: FormData): Promise<LoanDocumentResult> {
+  const { user, supabase } = await requireUserRole("Credit Analyst");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Select a document to upload." };
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return { ok: false, error: `${file.name} is larger than 5 MB.` };
+  }
+  if (!allowedLoanDocumentTypes.has(file.type)) {
+    return { ok: false, error: `${file.name} must be a PDF, PNG, or JPG file.` };
+  }
+
+  const safeName = file.name
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(-120) || "document";
+  const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(loanDocumentBucket)
+    .upload(path, new Uint8Array(await file.arrayBuffer()), {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("Unable to upload loan application document", error);
+    if (error.statusCode === "404" || error.message === "Bucket not found") {
+      return { ok: false, error: "Document storage is not configured yet. Apply the loan application documents migration, then try again." };
+    }
+    return { ok: false, error: `${file.name} could not be uploaded. Please try again.` };
+  }
+
+  return {
+    ok: true,
+    document: { name: file.name, size: displayFileSize(file.size), path },
+  };
+}
+
+export async function uploadLoanIdPicture(formData: FormData): Promise<LoanDocumentResult> {
+  const { user, supabase } = await requireUserRole("Credit Analyst");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Select a 2x2 picture to upload." };
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return { ok: false, error: `${file.name} is larger than 5 MB.` };
+  }
+  if (!allowedIdPictureTypes.has(file.type)) {
+    return { ok: false, error: `${file.name} must be a PNG or JPG image.` };
+  }
+
+  const safeName = file.name
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(-120) || "2x2-picture";
+  const path = `${user.id}/id-pictures/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(loanDocumentBucket)
+    .upload(path, new Uint8Array(await file.arrayBuffer()), {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("Unable to upload loan ID picture", error);
+    return { ok: false, error: "The 2x2 picture could not be uploaded. Please try again." };
+  }
+
+  return {
+    ok: true,
+    document: { name: file.name, size: displayFileSize(file.size), path },
+  };
+}
+
+export async function deleteLoanDocument(path: string) {
+  const { user, supabase } = await requireUserRole("Credit Analyst");
+  if (!path.startsWith(`${user.id}/`) || path.includes("..")) {
+    return { ok: false, error: "This document cannot be removed." } as const;
+  }
+  const { error } = await supabase.storage.from(loanDocumentBucket).remove([path]);
+  if (error) {
+    console.error("Unable to delete loan application document", error);
+    return { ok: false, error: "The document could not be removed. Please try again." } as const;
+  }
+  return { ok: true } as const;
+}
+
+export async function createLoanDocumentViewUrl(path: string): Promise<LoanDocumentUrlResult> {
+  const { supabase } = await requireUserRole("Credit Analyst");
+  if (!path || path.startsWith("/") || path.includes("..")) {
+    return { ok: false, error: "This document link is invalid." };
+  }
+  const { data, error } = await supabase.storage
+    .from(loanDocumentBucket)
+    .createSignedUrl(path, 60);
+  if (error || !data?.signedUrl) {
+    console.error("Unable to create loan application document URL", error);
+    return { ok: false, error: "The document could not be opened. Please try again." };
+  }
+  return { ok: true, url: data.signedUrl };
 }
 
 export async function getLoanCoMaker(
@@ -91,9 +260,15 @@ export async function getLoanCoMaker(
     return { ok: false, error: "The co-maker details could not be loaded. Please try again." };
   }
 
+  const { data: loanPicture, error: pictureError } = data
+    ? await supabase.from("loans").select("id_pictures").eq("id", loanId).maybeSingle()
+    : { data: null, error: null };
+  if (pictureError) console.error("Unable to load co-maker ID picture", pictureError);
+  const idPicture = idPictureDetails(loanPicture?.id_pictures).find(picture => picture.kind === "co_maker_2x2");
+
   return {
     ok: true,
-    coMaker: data ? coMakerRowToDetails(data as LoanCoMakerRow) : undefined,
+    coMaker: data ? { ...coMakerRowToDetails(data as LoanCoMakerRow), idPicture } : undefined,
   };
 }
 
@@ -104,22 +279,29 @@ export async function getLoanCoMakers(
   const uniqueLoanIds = [...new Set(loanIds.filter(Boolean))];
   if (!uniqueLoanIds.length) return { ok: true, coMakers: {} };
 
-  const { data, error } = await supabase
-    .from("loan_co_makers")
-    .select(coMakerColumns)
-    .in("loan_id", uniqueLoanIds);
+  const [{ data, error }, { data: pictureRows, error: pictureError }] = await Promise.all([
+    supabase.from("loan_co_makers").select(coMakerColumns).in("loan_id", uniqueLoanIds),
+    supabase.from("loans").select("id, id_pictures").in("id", uniqueLoanIds),
+  ]);
 
   if (error) {
     console.error("Unable to refresh loan co-makers", error);
     return { ok: false, error: "The co-maker details could not be refreshed. Please reload the page." };
   }
+  if (pictureError) console.error("Unable to refresh co-maker ID pictures", pictureError);
+  const picturesByLoanId = new Map(
+    (pictureRows ?? []).map(row => [
+      String(row.id),
+      idPictureDetails(row.id_pictures).find(picture => picture.kind === "co_maker_2x2"),
+    ]),
+  );
 
   return {
     ok: true,
     coMakers: Object.fromEntries(
       ((data ?? []) as LoanCoMakerRow[]).map(row => [
         row.loan_id,
-        coMakerRowToDetails(row),
+        { ...coMakerRowToDetails(row), idPicture: picturesByLoanId.get(row.loan_id) },
       ]),
     ),
   };
@@ -139,7 +321,12 @@ export async function createLoanApplication(
   const cashFlow = form.cashflow ?? {};
   const children = recordRows(form.__children);
   const businesses = recordRows(form.__businesses);
-  const supportingDocuments = recordRows(form.__documents).map(document => ({ name: document.name ?? "Document", size: document.size ?? "Unknown size" }));
+  const supportingDocuments = recordRows(form.__documents).map(document => ({
+    name: document.name ?? "Document",
+    size: document.size ?? "Unknown size",
+    ...(document.path ? { path: document.path } : {}),
+  }));
+  const applicantPicture = idPictureFromSection(personal, "applicant_2x2");
   const firstName = cleanText(personal["First name"]);
   const lastName = cleanText(personal["Last name"]);
   const loanProduct = cleanText(loan["Loan product"])?.toLowerCase();
@@ -154,10 +341,15 @@ export async function createLoanApplication(
     };
   }
 
+  if (!isAtLeastAge(personal["Date of birth"], 18)) {
+    return { ok: false, error: "The applicant must be at least 18 years old." };
+  }
+
 
   const numericFields: Array<[string, string | undefined]> = [
     ["Number of children", personal["Number of children"]],
     ["Gross monthly income", business["Gross monthly income"]],
+    ["Spouse age", household.Age],
     ["Household years", household.Years],
     ["Monthly income/salary", household["Monthly income/salary"]],
     ...cashFlowFieldLabels.map((field): [string, string | undefined] => [field, cashFlow[field]]),
@@ -165,6 +357,22 @@ export async function createLoanApplication(
   const invalidField = numericFields.find(([, value]) => invalidNumericValue(value));
   if (invalidField) {
     return { ok: false, error: `${invalidField[0]} must contain a valid number.` };
+  }
+
+
+  const spouseFields = [
+    household["Spouse name"],
+    household.Occupation,
+    household.Age,
+    household.Company,
+    household.Years,
+    household["Monthly income/salary"],
+  ];
+  if (cleanText(personal["Civil status"])?.toLowerCase() === "married" && spouseFields.some(value => !cleanText(value))) {
+    return { ok: false, error: "Complete all spouse details for a married applicant." };
+  }
+  if (cleanText(household.Age) && numberValue(household.Age) < 18) {
+    return { ok: false, error: "The applicant's spouse must be at least 18 years old." };
   }
 
   const optionalFields = {
@@ -224,6 +432,7 @@ export async function createLoanApplication(
         additionalFields: form.__custom ?? {},
       },
     ],
+    id_pictures: JSON.stringify(applicantPicture ? [applicantPicture] : []),
     ...cashFlowColumns,
     ...Object.fromEntries(
       Object.entries(optionalFields).filter(([, value]) => value !== undefined),
@@ -270,6 +479,7 @@ export async function createLoanCoMaker(
   const household = form["co-household"] ?? {};
   const business = form["co-business"] ?? {};
   const remarks = form["co-remarks"] ?? {};
+  const coMakerPicture = idPictureFromSection(personal, "co_maker_2x2");
   const presentAddressStatus = coMakerPresentAddressStatus(
     address["Present address"],
   );
@@ -304,6 +514,11 @@ export async function createLoanCoMaker(
     };
   }
 
+
+  if (!isAtLeastAge(personal["Date of birth"], 18)) {
+    return { ok: false, error: "The co-maker must be at least 18 years old." };
+  }
+
   const numberOfChildren = household["Number of children"];
   const grossMonthlyIncome = business["Gross monthly income"];
   const invalidField = [
@@ -336,6 +551,34 @@ export async function createLoanCoMaker(
     overall_remarks: cleanText(remarks["Overall remarks"]),
   };
 
+  let previousIdPictures: string | null | undefined;
+  if (coMakerPicture) {
+    const { data: loanRecord, error: loanError } = await supabase
+      .from("loans")
+      .select("id_pictures")
+      .eq("id", loanId)
+      .maybeSingle();
+    if (loanError || !loanRecord) {
+      console.error("Unable to load loan ID pictures", loanError);
+      return { ok: false, error: "The loan's 2x2 pictures could not be loaded. Please try again." };
+    }
+    previousIdPictures = loanRecord.id_pictures;
+    const nextPictures = [
+      ...idPictureDetails(previousIdPictures).filter(picture => picture.kind !== "co_maker_2x2"),
+      coMakerPicture,
+    ];
+    const { data: updatedLoan, error: pictureError } = await supabase
+      .from("loans")
+      .update({ id_pictures: JSON.stringify(nextPictures) })
+      .eq("id", loanId)
+      .select("id")
+      .maybeSingle();
+    if (pictureError || !updatedLoan) {
+      console.error("Unable to save co-maker ID picture", pictureError);
+      return { ok: false, error: "The co-maker's 2x2 picture could not be saved. Apply the ID picture update policy, then try again." };
+    }
+  }
+
   const { data, error } = await supabase
     .from("loan_co_makers")
     .insert({
@@ -356,6 +599,13 @@ export async function createLoanCoMaker(
     .single();
 
   if (error) {
+    if (coMakerPicture && previousIdPictures !== undefined) {
+      const { error: rollbackError } = await supabase
+        .from("loans")
+        .update({ id_pictures: previousIdPictures })
+        .eq("id", loanId);
+      if (rollbackError) console.error("Unable to roll back co-maker ID picture", rollbackError);
+    }
     console.error("Unable to create loan co-maker", error);
     if (error.code === "23503") {
       return { ok: false, error: "The selected loan no longer exists." };
@@ -378,6 +628,6 @@ export async function createLoanCoMaker(
   revalidatePath("/credit-analyst");
   return {
     ok: true,
-    coMaker: coMakerRowToDetails(data as LoanCoMakerRow),
+    coMaker: { ...coMakerRowToDetails(data as LoanCoMakerRow), idPicture: coMakerPicture },
   };
 }

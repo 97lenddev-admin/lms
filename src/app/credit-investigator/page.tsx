@@ -9,6 +9,11 @@ import {
   type InvestigatorLoanRow,
   type LoanInvestigationRow,
 } from "./loans";
+import {
+  coMakerColumns,
+  coMakerRowToDetails,
+  type LoanCoMakerRow,
+} from "../credit-analyst/co-makers";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +24,7 @@ export const metadata: Metadata = {
 
 export default async function CreditInvestigatorPage() {
   const { user, profile, supabase } = await requireUserRole("Credit Investigator");
-  const [loansResult, investigationsResult] = await Promise.all([
+  const [loansResult, investigationsResult, coMakersResult] = await Promise.all([
     supabase
       .from("loans")
       .select(investigatorLoanColumns)
@@ -31,14 +36,23 @@ export default async function CreditInvestigatorPage() {
       .from("loan_credit_investigations")
       .select(loanInvestigationColumns)
       .eq("credit_investigator_id", user.id),
+    supabase
+      .from("loan_co_makers")
+      .select(coMakerColumns),
   ]);
 
   const investigationsByLoanId = new Map(
     ((investigationsResult.data ?? []) as LoanInvestigationRow[]).map(row => [row.loan_id, row]),
   );
+  const coMakersByLoanId = new Map(
+    ((coMakersResult.data ?? []) as LoanCoMakerRow[]).map(row => [
+      row.loan_id,
+      coMakerRowToDetails(row),
+    ]),
+  );
   const loans = ((loansResult.data ?? []) as InvestigatorLoanRow[]).map(row =>
     attachInvestigation(
-      loanRowToInvestigatorLoan(row),
+      loanRowToInvestigatorLoan(row, coMakersByLoanId.get(row.id)),
       investigationsByLoanId.get(row.id),
     ),
   );
@@ -47,7 +61,7 @@ export default async function CreditInvestigatorPage() {
     <CreditInvestigatorApp
       userProfile={profile}
       initialLoans={loans}
-      loadError={loansResult.error || investigationsResult.error ? "Unable to load all loan or investigation details right now." : undefined}
+      loadError={loansResult.error || investigationsResult.error || coMakersResult.error ? "Unable to load all loan, co-maker, or investigation details right now." : undefined}
     />
   );
 }

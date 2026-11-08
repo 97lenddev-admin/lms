@@ -45,6 +45,53 @@ test("loan mapping reads submitted cash flow metadata", () => {
   assert.equal(submission.details.cashFlow["Gross business sales 1"], "45000");
 });
 
+test("loan mapping preserves private storage paths for supporting documents", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    supporting_documents: [{
+      kind: "file",
+      name: "permit.pdf",
+      size: "200 KB",
+      path: "user-id/document-id-permit.pdf",
+    }],
+  });
+
+  assert.deepEqual(submission.details.supportingDocuments, [{
+    name: "permit.pdf",
+    size: "200 KB",
+    path: "user-id/document-id-permit.pdf",
+  }]);
+});
+
+test("loan mapping parses applicant and co-maker 2x2 picture metadata", () => {
+  const pictures = [
+    { kind: "applicant_2x2", name: "applicant.jpg", size: "120 KB", path: "user/id-pictures/applicant.jpg" },
+    { kind: "co_maker_2x2", name: "co-maker.png", size: "95 KB", path: "user/id-pictures/co-maker.png" },
+  ];
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    id_pictures: JSON.stringify(pictures),
+  });
+
+  assert.deepEqual(submission.details.idPictures, pictures);
+});
+
+test("loan mapping includes rejection notes for the submitted view", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    status: "rejected",
+    reason_for_rejection: " Insufficient debt capacity ",
+    rejection_additional_details: " Monthly obligations exceed the allowed ratio. ",
+  });
+
+  assert.equal(submission.status, "Rejected");
+  assert.equal(submission.rejectionReason, "Insufficient debt capacity");
+  assert.equal(submission.rejectionAdditionalDetails, "Monthly obligations exceed the allowed ratio.");
+});
+
 test("loan mapping prefers direct cash flow columns for both utilities fields", () => {
   const submission = loanRowToSubmission({
     ...baseLoan,
