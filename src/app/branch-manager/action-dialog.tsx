@@ -22,6 +22,9 @@ export default function ActionDialog({
   notePlaceholder,
   noteRequired = false,
   dangerHeading = false,
+  busy = false,
+  busyLabel = "Approving…",
+  error,
 }: {
   open: boolean;
   title: string;
@@ -29,7 +32,7 @@ export default function ActionDialog({
   mobileDescription?: string;
   confirmLabel: string;
   onClose: () => void;
-  onConfirm: (result: { choice?: string; note: string }) => void;
+  onConfirm: (result: { choice?: string; note: string }) => void | Promise<void>;
   rows?: ActionDialogRow[];
   choices?: ActionDialogChoice[];
   choiceLabel?: string;
@@ -38,6 +41,9 @@ export default function ActionDialog({
   notePlaceholder?: string;
   noteRequired?: boolean;
   dangerHeading?: boolean;
+  busy?: boolean;
+  busyLabel?: string;
+  error?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -58,7 +64,7 @@ export default function ActionDialog({
     }
   }, [choices, defaultChoice, open]);
 
-  const canConfirm = (!choices.length || Boolean(choice)) && (!noteRequired || Boolean(note.trim()));
+  const canConfirm = !busy && (!choices.length || Boolean(choice)) && (!noteRequired || Boolean(note.trim()));
 
   return <dialog
     ref={dialog}
@@ -69,7 +75,7 @@ export default function ActionDialog({
     onClose={onClose}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
   >
-    <form className={styles.form} onSubmit={event => { event.preventDefault(); if (canConfirm) onConfirm({ choice: choice || undefined, note: note.trim() }); }}>
+    <form className={styles.form} onSubmit={event => { event.preventDefault(); if (canConfirm) void onConfirm({ choice: choice || undefined, note: note.trim() }); }}>
       <div className={styles.body}>
         <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
         <h2 id={titleId} className={dangerHeading ? styles.dangerHeading : undefined}>{title}</h2>
@@ -81,10 +87,11 @@ export default function ActionDialog({
           {choices.map(option => <label key={option.value}><input type="radio" name={choiceName} value={option.value} checked={choice === option.value} onChange={() => setChoice(option.value)} /><span>{option.label}</span></label>)}
         </fieldset>}
         {noteLabel && <label className={styles.note}><span>{noteLabel}</span><textarea required={noteRequired} value={note} placeholder={notePlaceholder} onChange={event => setNote(event.target.value)} /></label>}
+        {error && <p role="alert" className={styles.error}>{error}</p>}
       </div>
       <footer className={styles.footer}>
-        <button type="button" className={styles.secondary} onClick={onClose}>Cancel<span className={styles.mobileBack}>Go back</span></button>
-        <button type="submit" className={styles.confirm} disabled={!canConfirm}>{confirmLabel}</button>
+        <button type="button" className={styles.secondary} onClick={onClose} disabled={busy}>Cancel<span className={styles.mobileBack}>Go back</span></button>
+        <button type="submit" className={styles.confirm} disabled={!canConfirm}>{busy ? busyLabel : confirmLabel}</button>
       </footer>
     </form>
   </dialog>;

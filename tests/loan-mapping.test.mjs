@@ -45,6 +45,32 @@ test("loan mapping reads submitted cash flow metadata", () => {
   assert.equal(submission.details.cashFlow["Gross business sales 1"], "45000");
 });
 
+test("loan mapping reads the submitted purpose of loan", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    supporting_documents: [{
+      kind: "application_metadata",
+      purposeOfLoan: "Additional inventory",
+    }],
+  });
+
+  assert.equal(submission.details.purposeOfLoan, "Additional inventory");
+});
+
+test("loan mapping supports purpose saved as a legacy custom field", () => {
+  const submission = loanRowToSubmission({
+    ...baseLoan,
+    loan_product: "daily",
+    supporting_documents: [{
+      kind: "application_metadata",
+      additionalFields: { "Purpose of loan": "Equipment purchase" },
+    }],
+  });
+
+  assert.equal(submission.details.purposeOfLoan, "Equipment purchase");
+});
+
 test("loan mapping preserves private storage paths for supporting documents", () => {
   const submission = loanRowToSubmission({
     ...baseLoan,

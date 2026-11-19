@@ -55,6 +55,7 @@ export type Submission = {
   status: SubmissionStatus;
   rejectionReason?: string;
   rejectionAdditionalDetails?: string;
+  revisionDetails?: string;
   hasCoMaker?: boolean;
   coMaker?: CoMakerDetails;
   details?: {
@@ -90,6 +91,7 @@ export type Submission = {
     realAndPersonalProperties?: string;
     healthDeclaration?: string;
     cashFlow?: Record<string, string>;
+    purposeOfLoan?: string;
     supportingDocuments?: { name: string; size: string; path?: string }[];
     additionalFields?: Record<string, string>;
     idPictures?: IdPictureMetadata[];
@@ -161,7 +163,7 @@ export const applicationSections: FormSection[] = [
   { id: "household", title: "Household information", summary: "", fields: ["Spouse name", "Occupation", "Age", "Company", "Years", "Monthly income/salary"] },
   { id: "other", title: "Other information", summary: "", fields: ["Real and personal properties owned"] },
   { id: "relative", title: "Nearest relative to contact", summary: "", fields: ["Name", "Contact number", "Address"] },
-  { id: "loan", title: "Loan details", summary: "", fields: ["Loan product", "Loan amount", "Term"] },
+  { id: "loan", title: "Loan details", summary: "", fields: ["Loan product", "Loan amount", "Term", "Purpose of loan"] },
   { id: "documents", title: "Supporting documents", summary: "2 files · no note added" },
   { id: "schedule", title: "Payment schedule", summary: "Set loan details first" },
   { id: "cashflow", title: "Cash flow", summary: "Income, expenses, and debt capacity", fields: cashFlowFieldLabels },

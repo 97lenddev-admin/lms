@@ -57,11 +57,12 @@ export type LoanRow = {
   status: string;
   reason_for_rejection: string | null;
   rejection_additional_details: string | null;
+  revision_details: string | null;
   created_at: string;
 };
 
 export const loanColumns =
-  "id, loan_id, first_name, middle_name, last_name, date_of_birth, civil_status, citizenship, gender, place_of_birth, permanent_address, permanent_barangay, permanent_city_town, permanent_zipcode, permanent_region, present_address, number_of_children, contact_number, children, businesses, gross_monthly_income, spouse_name, spouse_occupation, spouse_company, spouse_years_employed, spouse_monthly_income, nearest_relative_name, nearest_relative_contact_number, nearest_relative_address, real_and_personal_properties, health_declaration, gross_business_sales_1, gross_business_sales_2, gross_business_sales_3, raw_materials, utilities, business_rent, personnel, taxes, loan_payments, salaries, pensions, remittance, food, household_rent, school, income_utilities, medical, supporting_documents, id_pictures, loan_product, loan_amount, term, status, reason_for_rejection, rejection_additional_details, created_at";
+  "id, loan_id, first_name, middle_name, last_name, date_of_birth, civil_status, citizenship, gender, place_of_birth, permanent_address, permanent_barangay, permanent_city_town, permanent_zipcode, permanent_region, present_address, number_of_children, contact_number, children, businesses, gross_monthly_income, spouse_name, spouse_occupation, spouse_company, spouse_years_employed, spouse_monthly_income, nearest_relative_name, nearest_relative_contact_number, nearest_relative_address, real_and_personal_properties, health_declaration, gross_business_sales_1, gross_business_sales_2, gross_business_sales_3, raw_materials, utilities, business_rent, personnel, taxes, loan_payments, salaries, pensions, remittance, food, household_rent, school, income_utilities, medical, supporting_documents, id_pictures, loan_product, loan_amount, term, status, reason_for_rejection, rejection_additional_details, revision_details, created_at";
 
 const statuses: SubmissionStatus[] = [
   "Active",
@@ -94,25 +95,29 @@ function recordRows(value: unknown) {
 }
 
 function documentDetails(value: unknown) {
-  const empty = { files: [] as { name: string; size: string; path?: string }[], emailFacebookAddress: undefined as string | undefined, spouseAge: undefined as string | undefined, cashFlow: {} as Record<string, string>, additionalFields: {} as Record<string, string> };
+  const empty = { files: [] as { name: string; size: string; path?: string }[], emailFacebookAddress: undefined as string | undefined, spouseAge: undefined as string | undefined, purposeOfLoan: undefined as string | undefined, cashFlow: {} as Record<string, string>, additionalFields: {} as Record<string, string> };
   if (Array.isArray(value)) {
-    const metadata = value.find(item => item && typeof item === "object" && !Array.isArray(item) && "kind" in item && item.kind === "application_metadata") as { emailFacebookAddress?: unknown; spouseAge?: unknown; cashFlow?: unknown; additionalFields?: unknown } | undefined;
+    const metadata = value.find(item => item && typeof item === "object" && !Array.isArray(item) && "kind" in item && item.kind === "application_metadata") as { emailFacebookAddress?: unknown; spouseAge?: unknown; purposeOfLoan?: unknown; cashFlow?: unknown; additionalFields?: unknown } | undefined;
+    const additionalFields = metadata?.additionalFields && typeof metadata.additionalFields === "object" && !Array.isArray(metadata.additionalFields) ? metadata.additionalFields as Record<string, string> : {};
     return {
       files: value.filter((file): file is { name: string; size: string; path?: string } => Boolean(file) && typeof file === "object" && "name" in file && "size" in file && (!("kind" in file) || file.kind !== "application_metadata")).map(file => ({ name: String(file.name), size: String(file.size), ...(typeof file.path === "string" ? { path: file.path } : {}) })),
       emailFacebookAddress: typeof metadata?.emailFacebookAddress === "string" ? metadata.emailFacebookAddress : undefined,
       spouseAge: typeof metadata?.spouseAge === "string" ? metadata.spouseAge : undefined,
+      purposeOfLoan: typeof metadata?.purposeOfLoan === "string" ? metadata.purposeOfLoan : additionalFields["Purpose of loan"] ?? additionalFields.Purpose,
       cashFlow: metadata?.cashFlow && typeof metadata.cashFlow === "object" && !Array.isArray(metadata.cashFlow) ? metadata.cashFlow as Record<string, string> : {},
-      additionalFields: metadata?.additionalFields && typeof metadata.additionalFields === "object" && !Array.isArray(metadata.additionalFields) ? metadata.additionalFields as Record<string, string> : {},
+      additionalFields,
     };
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return empty;
-  const manifest = value as { files?: unknown; emailFacebookAddress?: unknown; spouseAge?: unknown; cashFlow?: unknown; additionalFields?: unknown };
+  const manifest = value as { files?: unknown; emailFacebookAddress?: unknown; spouseAge?: unknown; purposeOfLoan?: unknown; cashFlow?: unknown; additionalFields?: unknown };
+  const additionalFields = manifest.additionalFields && typeof manifest.additionalFields === "object" && !Array.isArray(manifest.additionalFields) ? manifest.additionalFields as Record<string, string> : {};
   return {
     files: Array.isArray(manifest.files) ? manifest.files.filter((file): file is { name: string; size: string; path?: string } => Boolean(file) && typeof file === "object" && "name" in file && "size" in file).map(file => ({ name: String(file.name), size: String(file.size), ...(typeof file.path === "string" ? { path: file.path } : {}) })) : [],
     emailFacebookAddress: typeof manifest.emailFacebookAddress === "string" ? manifest.emailFacebookAddress : undefined,
     spouseAge: typeof manifest.spouseAge === "string" ? manifest.spouseAge : undefined,
+    purposeOfLoan: typeof manifest.purposeOfLoan === "string" ? manifest.purposeOfLoan : additionalFields["Purpose of loan"] ?? additionalFields.Purpose,
     cashFlow: manifest.cashFlow && typeof manifest.cashFlow === "object" && !Array.isArray(manifest.cashFlow) ? manifest.cashFlow as Record<string, string> : {},
-    additionalFields: manifest.additionalFields && typeof manifest.additionalFields === "object" && !Array.isArray(manifest.additionalFields) ? manifest.additionalFields as Record<string, string> : {},
+    additionalFields,
   };
 }
 
@@ -196,6 +201,7 @@ export function loanRowToSubmission(
     status: normalizeStatus(row.status),
     rejectionReason: row.reason_for_rejection?.trim() || undefined,
     rejectionAdditionalDetails: row.rejection_additional_details?.trim() || undefined,
+    revisionDetails: row.revision_details?.trim() || undefined,
     hasCoMaker: Boolean(coMaker),
     coMaker,
     details: {
@@ -231,6 +237,7 @@ export function loanRowToSubmission(
       realAndPersonalProperties: row.real_and_personal_properties || undefined,
       healthDeclaration: row.health_declaration || undefined,
       cashFlow: cashFlowDetails(row, documents.cashFlow),
+      purposeOfLoan: documents.purposeOfLoan,
       supportingDocuments: documents.files,
       additionalFields: documents.additionalFields,
       idPictures: idPictureDetails(row.id_pictures),

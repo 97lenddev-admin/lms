@@ -428,6 +428,7 @@ export async function createLoanApplication(
         version: 1,
         emailFacebookAddress: cleanText(personal["Email / Facebook address"]),
         spouseAge: cleanText(household.Age),
+        purposeOfLoan: cleanText(loan["Purpose of loan"]),
         cashFlow,
         additionalFields: form.__custom ?? {},
       },

@@ -7,11 +7,13 @@ import styles from "./branch-manager.module.css";
 
 export type FilterValues = {
   status: string; sort: string; from: string; to: string; analyst: string; product: string;
+  clientName: string; loanId: string;
   minimum: string; maximum: string; balanceMinimum: string; balanceMaximum: string;
   overdue: string; coMaker: boolean; flagged: boolean;
 };
 export const emptyFilters: FilterValues = {
   status: "", sort: "", from: "", to: "", analyst: "", product: "", minimum: "", maximum: "",
+  clientName: "", loanId: "",
   balanceMinimum: "", balanceMaximum: "", overdue: "", coMaker: false, flagged: false,
 };
 export const productKey = (loan: Submission) => `${loan.amount.replace(/\.00$/, "")} / ${loan.term}`;
@@ -23,6 +25,8 @@ export function matchesFilters(loan: FilterableSubmission, analyst: string, filt
   const overdueRanges: Record<string, [number, number]> = { "Current": [0, 0], "1–30 days": [1, 30], "31–60 days": [31, 60], "61–90 days": [61, 90], "90+ days": [91, Infinity] };
   const overdue = overdueRanges[filters.overdue];
   return (!filters.status || loan.status === filters.status)
+    && (!filters.clientName || loan.name.toLowerCase().includes(filters.clientName.trim().toLowerCase()))
+    && (!filters.loanId || loan.id.toLowerCase().includes(filters.loanId.trim().toLowerCase()))
     && (!filters.analyst || analyst === filters.analyst)
     && (!filters.product || productKey(loan) === filters.product)
     && (!filters.from || date >= Date.parse(filters.from))
@@ -66,6 +70,10 @@ export default function AdvanceFilters({ products, onApply, initialValues }: { i
       <button type="button" className={styles.moreFilters} aria-expanded={more} aria-controls="additional-criteria" onClick={() => setMore(!more)}><FilterIcon name="filter-chevron" />More filters</button>
       {more && <section id="additional-criteria" className={styles.additionalCriteria} aria-labelledby="additional-criteria-title">
         <h2 id="additional-criteria-title">Additional criteria</h2>
+        <div className={styles.filterPair}>
+          <label className={`${styles.filterField} ${styles.filterSearchField}`}>Client name<input type="search" placeholder="Search by client name" value={draft.clientName} onChange={e => set("clientName", e.target.value)} /></label>
+          <label className={`${styles.filterField} ${styles.filterSearchField}`}>Loan ID<input type="search" placeholder="Search by loan ID" value={draft.loanId} onChange={e => set("loanId", e.target.value)} /></label>
+        </div>
         <div className={styles.filterPair}>{range("Loan amount range (PHP)", "minimum", "maximum")}{range("Balance remaining (%)", "balanceMinimum", "balanceMaximum", true)}</div>
         <div className={styles.filterPair}>
           {select("Days overdue", "overdue", "Any", ["Current", "1–30 days", "31–60 days", "61–90 days", "90+ days"])}

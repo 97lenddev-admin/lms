@@ -10,8 +10,8 @@ test("branch manager master list loads loans from Supabase", () => {
 
   assert.match(page, /requireUserRole\("Branch Manager"\)/);
   assert.match(page, /\.from\("loans"\)/);
-  assert.match(page, /\.select\(loanColumns\)/);
-  assert.match(page, /\.map\(row => loanRowToSubmission\(row\)\)/);
+  assert.match(page, /\.select\(investigatorLoanColumns\)/);
+  assert.match(page, /loanRows\.map\(row => loanRowToSubmission\(row, coMakersByLoanId\.get\(row\.id\)\)\)/);
   assert.match(page, /initialSubmissions=/);
 });
 
