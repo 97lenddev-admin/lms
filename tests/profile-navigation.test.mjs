@@ -34,3 +34,16 @@ test("all dashboard navigation variants render the profile name and role", () =>
     assert.match(source, /userProfile\.role/);
   }
 });
+
+test("dashboard navigation variants do not render profile pictures", () => {
+  const files = [
+    "../src/app/credit-analyst/navigation.tsx",
+    "../src/app/branch-manager/branch-manager-app.tsx",
+    "../src/app/cashier/cashier-app.tsx",
+  ];
+
+  for (const file of files) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /avatar-figma|imgAvatar|cashier\/avatar|styles\.avatar/);
+  }
+});

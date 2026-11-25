@@ -113,6 +113,41 @@ test("application forms enforce adult ages while exempting child birthdays", () 
   assert.match(actions, /The co-maker must be at least 18 years old\./);
 });
 
+test("generated child rows are required only when the application has children", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /const childrenRequired = numericValue\(childrenCount\) > 0/);
+  assert.match(source, /required=\{childrenRequired && field !== "Age"\}/);
+  assert.match(actions, /numberOfChildren > 0 && \(children\.length !== numberOfChildren/);
+  assert.match(actions, /children\.some\(child => !childDetailsComplete\(child\)\)/);
+  assert.match(actions, /Complete all generated child details before submitting the application/);
+  assert.match(actions, /const submittedChildren = numberOfChildren > 0 \? children : \[\]/);
+});
+
+test("co-maker child rows are required when the co-maker has children", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const actions = readFileSync(
+    new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /required=\{childrenRequired && childField !== "Age"\}/);
+  assert.match(actions, /childCount > 0 && \(children\.length !== childCount/);
+  assert.match(actions, /children\.some\(child => !childDetailsComplete\(child\)\)/);
+  assert.match(actions, /Complete all generated child details before submitting the co-maker/);
+  assert.match(actions, /const submittedChildren = childCount > 0 \? children : \[\]/);
+});
+
 test("spouse details are required only for married applicants", () => {
   const source = readFileSync(
     new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
@@ -172,13 +207,25 @@ test("new application attachments can be previewed before submission", () => {
     new URL("../src/app/credit-analyst/actions.ts", import.meta.url),
     "utf8",
   );
+  const config = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+  const limitMigration = readFileSync(
+    new URL("../supabase/migrations/20261124102439_increase_loan_application_document_limit.sql", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(source, /URL\.createObjectURL\(file\)/);
+  assert.match(source, /URL\.createObjectURL\(uploadFile\)/);
+  assert.match(source, /compressImageForUpload\(file, \{ maxDimension: 1600 \}\)/);
+  assert.match(source, /uploadFile\.size > 10 \* 1024 \* 1024/);
+  assert.match(source, /PDF, PNG, JPG \(max\. 10MB\)/);
   assert.match(source, /Preview ↗/);
   assert.match(source, /window\.open\(file\.previewUrl, "_blank", "noopener,noreferrer"\)/);
   assert.match(source, /URL\.revokeObjectURL\(file\.previewUrl\)/);
   assert.match(actions, /error\.statusCode === "404"/);
+  assert.match(actions, /file\.size > 10 \* 1024 \* 1024/);
   assert.match(actions, /Document storage is not configured yet/);
+  assert.match(config, /bodySizeLimit: "11mb"/);
+  assert.match(limitMigration, /file_size_limit = 10485760/);
+  assert.match(limitMigration, /id = 'loan-application-documents'/);
 });
 
 test("application and co-maker 2x2 pictures upload, persist, and preview", () => {
@@ -196,6 +243,7 @@ test("application and co-maker 2x2 pictures upload, persist, and preview", () =>
   );
 
   assert.match(source, /function PhotoUpload/);
+  assert.match(source, /compressImageForUpload\(file, \{ maxDimension: 800 \}\)/);
   assert.match(source, /uploadLoanIdPicture\(formData\)/);
   assert.match(source, /2x2 picture/);
   assert.match(source, /values\.personal\?\.__picture/);
@@ -210,6 +258,31 @@ test("application and co-maker 2x2 pictures upload, persist, and preview", () =>
   assert.match(migration, /grant update \(id_pictures\) on table public\.loans to authenticated/);
   assert.match(migration, /status = 'pending'/);
   assert.match(migration, /profile\.roles = 'Credit Analyst'/);
+});
+
+test("mobile and desktop add-co-maker pictures use the compressed upload path", () => {
+  const source = readFileSync(
+    new URL("../src/app/credit-analyst/credit-analyst-app.tsx", import.meta.url),
+    "utf8",
+  );
+  const mobileFields = source.slice(
+    source.indexOf("function MobileApplicationFields"),
+    source.indexOf("function SectionForm"),
+  );
+  const desktopCoMaker = source.slice(
+    source.indexOf("function DesktopCoMakerForm"),
+    source.indexOf("function ReadOnlyDocument"),
+  );
+  const photoUpload = source.slice(
+    source.indexOf("function PhotoUpload"),
+    source.indexOf("function DesktopApplicationForm"),
+  );
+
+  assert.match(mobileFields, /section\.id === "co-personal"[\s\S]*?<PhotoUpload/);
+  assert.match(desktopCoMaker, /Co-maker personal information[\s\S]*?<PhotoUpload/);
+  assert.match(photoUpload, /compressImageForUpload\(file, \{ maxDimension: 800 \}\)/);
+  assert.match(photoUpload, /formData\.set\("file", uploadFile\)/);
+  assert.match(photoUpload, /uploadLoanIdPicture\(formData\)/);
 });
 
 test("mobile additional fields are added to the same database payload as desktop fields", () => {

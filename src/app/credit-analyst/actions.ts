@@ -138,8 +138,8 @@ export async function uploadLoanDocument(formData: FormData): Promise<LoanDocume
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Select a document to upload." };
   }
-  if (file.size > 5 * 1024 * 1024) {
-    return { ok: false, error: `${file.name} is larger than 5 MB.` };
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, error: `${file.name} is larger than 10 MB.` };
   }
   if (!allowedLoanDocumentTypes.has(file.type)) {
     return { ok: false, error: `${file.name} must be a PDF, PNG, or JPG file.` };
@@ -310,7 +310,7 @@ export async function getLoanCoMakers(
 export async function createLoanApplication(
   form: ApplicationFormData,
 ): Promise<CreateLoanResult> {
-  const { supabase } = await requireUserRole("Credit Analyst");
+  const { profile, supabase } = await requireUserRole("Credit Analyst");
 
   const personal = form.personal ?? {};
   const business = form.business ?? {};
@@ -358,6 +358,19 @@ export async function createLoanApplication(
   if (invalidField) {
     return { ok: false, error: `${invalidField[0]} must contain a valid number.` };
   }
+
+  const numberOfChildren = Math.max(0, Math.floor(numberValue(personal["Number of children"])));
+  const childDetailsComplete = (child: Record<string, string>) => [
+    child.Name,
+    child.School,
+    child["Grade/Course"],
+    child.Birthday ?? child["Date of birth"],
+    child.Age,
+  ].every(value => Boolean(cleanText(value)));
+  if (numberOfChildren > 0 && (children.length !== numberOfChildren || children.some(child => !childDetailsComplete(child)))) {
+    return { ok: false, error: "Complete all generated child details before submitting the application." };
+  }
+  const submittedChildren = numberOfChildren > 0 ? children : [];
 
 
   const spouseFields = [
@@ -412,14 +425,14 @@ export async function createLoanApplication(
   );
 
   const payload = {
-    loan_id: `LN-${Date.now().toString().slice(-8)}`,
+    submitted_by_name: profile.fullName,
     first_name: firstName,
     last_name: lastName,
     loan_product: loanProduct,
     loan_amount: loanAmount,
     term,
     status: "pending",
-    children,
+    children: submittedChildren,
     businesses,
     supporting_documents: [
       ...supportingDocuments.map(document => ({ ...document, kind: "file" })),
@@ -440,11 +453,25 @@ export async function createLoanApplication(
     ),
   };
 
-  const { data, error } = await supabase
-    .from("loans")
-    .insert(payload)
-    .select(loanColumns)
-    .single();
+  const insertLoan = (insertPayload: typeof payload | Omit<typeof payload, "submitted_by_name">) =>
+    supabase
+      .from("loans")
+      .insert(insertPayload)
+      .select(loanColumns)
+      .single();
+
+  let { data, error } = await insertLoan(payload);
+  const submitterColumnUnavailable = Boolean(
+    error &&
+    (error.code === "42703" ||
+      error.code === "PGRST204" ||
+      error.message.includes("submitted_by_name")),
+  );
+  if (submitterColumnUnavailable) {
+    const { submitted_by_name: submittedByName, ...legacyPayload } = payload;
+    void submittedByName;
+    ({ data, error } = await insertLoan(legacyPayload));
+  }
 
   if (error) {
     console.error("Unable to create loan application", error);
@@ -480,6 +507,7 @@ export async function createLoanCoMaker(
   const household = form["co-household"] ?? {};
   const business = form["co-business"] ?? {};
   const remarks = form["co-remarks"] ?? {};
+  const children = recordRows(form.__children);
   const coMakerPicture = idPictureFromSection(personal, "co_maker_2x2");
   const presentAddressStatus = coMakerPresentAddressStatus(
     address["Present address"],
@@ -531,6 +559,19 @@ export async function createLoanCoMaker(
     return { ok: false, error: `${invalidField[0]} must contain a valid number.` };
   }
 
+  const childCount = Math.max(0, Math.floor(numberValue(numberOfChildren)));
+  const childDetailsComplete = (child: Record<string, string>) => [
+    child.Name,
+    child.School,
+    child["Grade/Course"],
+    child.Birthday ?? child["Date of birth"],
+    child.Age,
+  ].every(value => Boolean(cleanText(value)));
+  if (childCount > 0 && (children.length !== childCount || children.some(child => !childDetailsComplete(child)))) {
+    return { ok: false, error: "Complete all generated child details before submitting the co-maker." };
+  }
+  const submittedChildren = childCount > 0 ? children : [];
+
   const optionalFields = {
     date_of_birth: cleanText(personal["Date of birth"]),
     civil_status: cleanText(personal["Civil status"]),
@@ -546,7 +587,7 @@ export async function createLoanCoMaker(
     provincial_zip_code: cleanText(address["Provincial ZIP code"]),
     provincial_region: cleanText(address["Provincial region"]),
     number_of_children: numberValue(numberOfChildren) || undefined,
-    children: recordRows(form.__children),
+    children: submittedChildren,
     businesses: recordRows(form.__businesses),
     gross_monthly_income: numberValue(grossMonthlyIncome) || undefined,
     overall_remarks: cleanText(remarks["Overall remarks"]),

@@ -52,6 +52,7 @@ export type InvestigatorLoan = {
 };
 
 export type InvestigatorLoanRow = LoanRow & {
+  submitted_by_name?: string | null;
   claim_status: string | null;
   recommended_amount: number | string | null;
 };
@@ -77,7 +78,8 @@ export type LoanInvestigationRow = {
   disclosure_statement_status: string | null;
 };
 
-export const investigatorLoanColumns = `${loanColumns}, claim_status, recommended_amount`;
+export const investigatorLoanColumns = `${loanColumns}, submitted_by_name, claim_status, recommended_amount`;
+export const legacyInvestigatorLoanColumns = `${loanColumns}, claim_status, recommended_amount`;
 export const loanInvestigationColumns = "id, loan_id, business, other_lending, computations_comments_observations, other_pending_requirements, insurance_and_deposit_disclosure, plate_no, collateral_items, surrendered_items, investigation_report_submited_date, cashflow_analysis_submitted_date, collateral_analysis_submitted_date, disclosure_statement_submitted_date, investigation_report_status, cashflow_analysis_status, collateral_analysis_status, disclosure_statement_status";
 
 function normalizeClaimStatus(value: string | null): InvestigatorClaimStatus {
@@ -120,7 +122,7 @@ export function loanRowToInvestigatorLoan(
     id: submission.id,
     name: submission.name,
     amount: submission.amount,
-    submittedBy: "Credit Analyst",
+    submittedBy: row.submitted_by_name?.trim() || "Credit Analyst",
     submitted: submission.submitted,
     status: claimStatus === "claimed" ? submission.status : "Open",
     claimStatus,

@@ -22,10 +22,6 @@ function Logo() {
 function AccountCard({ userProfile }: { userProfile: UserProfileIdentity }) {
   return (
     <div className={styles.accountCard}>
-      <div className={styles.avatar}>
-        <Image src="/cashier/avatar.png" alt={userProfile.fullName} width={40} height={40} />
-        <span className={styles.online}><Image src="/cashier/status-online.svg" alt="" width={10} height={10} /></span>
-      </div>
       <div className={styles.accountText}><strong>{userProfile.fullName}</strong><span>{userProfile.role}</span></div>
       <SignOutButton iconSrc="/cashier/sign-out.svg" iconSize={16} buttonClassName={styles.signOut} />
     </div>
